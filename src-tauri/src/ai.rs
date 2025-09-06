@@ -103,6 +103,137 @@ fn extract_key_features(summary: &str) -> Vec<String> {
     features
 }
 
+fn build_comprehensive_context(analysis: &RepoAnalysis) -> String {
+    let mut context = String::new();
+    
+    // Basic metrics
+    context.push_str(&format!(
+        "Repository Overview:\n\
+        - Total Files: {}\n\
+        - Total Lines of Code: {}\n\
+        - Analyzed Files: {}\n\
+        - Technologies: {}\n\n",
+        analysis.metrics.get("total_files").unwrap_or(&0),
+        analysis.metrics.get("total_lines").unwrap_or(&0),
+        analysis.metrics.get("analyzed_files").unwrap_or(&0),
+        analysis.technologies.join(", ")
+    ));
+    
+    // Detailed file analysis with more context
+    context.push_str("File Analysis:\n");
+    
+    // Group files by type/purpose
+    let mut config_files = Vec::new();
+    let mut source_files = Vec::new();
+    let mut test_files = Vec::new();
+    let mut doc_files = Vec::new();
+    let mut build_files = Vec::new();
+    
+    for file in &analysis.files {
+        let path_lower = file.path.to_lowercase();
+        
+        if path_lower.contains("test") || path_lower.contains("spec") || 
+           file.path.ends_with(".test.ts") || file.path.ends_with(".test.js") ||
+           file.path.ends_with(".spec.ts") || file.path.ends_with(".spec.js") {
+            test_files.push(file);
+        } else if path_lower.contains("readme") || path_lower.contains("doc") || 
+                  file.path.ends_with(".md") {
+            doc_files.push(file);
+        } else if path_lower.contains("config") || file.path.ends_with(".json") || 
+                  file.path.ends_with(".yml") || file.path.ends_with(".yaml") ||
+                  file.path.ends_with(".toml") || file.path.ends_with(".xml") {
+            config_files.push(file);
+        } else if file.path.contains("build") || file.path.contains("dist") ||
+                  path_lower.contains("makefile") || path_lower.contains("dockerfile") {
+            build_files.push(file);
+        } else {
+            source_files.push(file);
+        }
+    }
+    
+    // Provide detailed context about key files
+    if !source_files.is_empty() {
+        context.push_str("\nSource Files (showing key implementation details):\n");
+        for file in source_files.iter().take(15) {
+            let preview = if file.content.len() > 800 {
+                format!("{}...", &file.content[..800])
+            } else {
+                file.content.clone()
+            };
+            
+            // Extract important patterns from source files
+            let has_exports = preview.contains("export ") || preview.contains("module.exports");
+            let has_imports = preview.contains("import ") || preview.contains("require(");
+            let has_classes = preview.contains("class ") || preview.contains("interface ");
+            let has_functions = preview.contains("function ") || preview.contains("const ") || preview.contains("fn ");
+            let has_api_calls = preview.contains("fetch(") || preview.contains("axios") || preview.contains("http");
+            let has_database = preview.contains("database") || preview.contains("query") || preview.contains("SELECT");
+            
+            context.push_str(&format!(
+                "\n{} ({}): {} chars\n",
+                file.path, file.language, file.content.len()
+            ));
+            
+            if has_exports { context.push_str("  - Exports modules/functions\n"); }
+            if has_imports { context.push_str("  - Imports external dependencies\n"); }
+            if has_classes { context.push_str("  - Defines classes/interfaces\n"); }
+            if has_functions { context.push_str("  - Contains functions/methods\n"); }
+            if has_api_calls { context.push_str("  - Makes API/HTTP calls\n"); }
+            if has_database { context.push_str("  - Database operations\n"); }
+            
+            context.push_str(&format!("Content preview:\n{}\n", preview));
+        }
+    }
+    
+    if !config_files.is_empty() {
+        context.push_str("\nConfiguration Files:\n");
+        for file in config_files.iter().take(10) {
+            let preview = if file.content.len() > 500 {
+                format!("{}...", &file.content[..500])
+            } else {
+                file.content.clone()
+            };
+            context.push_str(&format!(
+                "\n{}: {}\n",
+                file.path, preview
+            ));
+        }
+    }
+    
+    if !test_files.is_empty() {
+        context.push_str(&format!("\nTest Coverage: {} test files found\n", test_files.len()));
+        context.push_str("Test files indicate existing functionality:\n");
+        for file in test_files.iter().take(5) {
+            context.push_str(&format!("  - {}\n", file.path));
+        }
+    }
+    
+    if !doc_files.is_empty() {
+        context.push_str("\nDocumentation:\n");
+        for file in doc_files.iter().take(3) {
+            let preview = if file.content.len() > 400 {
+                format!("{}...", &file.content[..400])
+            } else {
+                file.content.clone()
+            };
+            context.push_str(&format!(
+                "\n{}: {}\n",
+                file.path, preview
+            ));
+        }
+    }
+    
+    // Directory structure analysis
+    context.push_str("\nProject Structure:\n");
+    for (dir, files) in &analysis.structure {
+        if files.len() > 0 {
+            context.push_str(&format!("  {}/: {} files\n", dir, files.len()));
+        }
+    }
+    
+    context
+}
+
 #[tauri::command]
 pub async fn load_models(api_url: String, api_key: String) -> Result<Vec<ModelInfo>, String> {
     let client = reqwest::Client::new();
@@ -158,49 +289,34 @@ pub async fn load_models(api_url: String, api_key: String) -> Result<Vec<ModelIn
 #[tauri::command]
 pub async fn generate_ideas(request: IdeaRequest) -> Result<Vec<String>, String> {
     let client = reqwest::Client::new();
+    let comprehensive_context = build_comprehensive_context(&request.analysis);
+    
     let prompt = format!(
-        "Analyze this code repository and generate 5-10 creative, actionable development ideas.
+        "Analyze this code repository thoroughly and generate 5-10 creative, actionable development ideas.
 
-Repository Analysis:
-- Technologies: {}
-- Total Files: {}
-- Total Lines: {}
-- Directory Structure: {} directories analyzed
-
-Key Files Preview:
 {}
 
-Please provide specific, actionable suggestions for:
-1. Code improvements and refactoring opportunities
-2. New features that would enhance the project
-3. Architecture improvements
-4. Developer experience enhancements
-5. Performance optimizations
-6. Testing strategies
-7. Documentation improvements
+IMPORTANT INSTRUCTIONS:
+1. Review the existing code files, tests, and configurations carefully
+2. Identify what features and functionality are ALREADY IMPLEMENTED
+3. Only suggest ideas that are NOT already present in the codebase
+4. Focus on genuine improvements, new features, and unimplemented functionality
+5. Avoid suggesting features that are clearly already working based on the code analysis
 
-IMPORTANT: Format your response as a numbered list with one idea per line.",
-        request.analysis.technologies.join(", "),
-        request.analysis.metrics.get("total_files").unwrap_or(&0),
-        request.analysis.metrics.get("total_lines").unwrap_or(&0),
-        request.analysis.structure.len(),
-        request
-            .analysis
-            .files
-            .iter()
-            .take(10)
-            .map(|f| format!(
-                "{} ({}): {}",
-                f.path,
-                f.language,
-                if f.content.len() > 200 {
-                    format!("{}...", &f.content[..200])
-                } else {
-                    f.content.clone()
-                }
-            ))
-            .collect::<Vec<_>>()
-            .join("\n\n")
+Categories for suggestions (only if not already implemented):
+- New features that would enhance the project
+- Code improvements and refactoring opportunities (for areas not already optimized)
+- Architecture improvements
+- Developer experience enhancements
+- Performance optimizations (for specific unoptimized areas)
+- Testing strategies (for untested areas)
+- Documentation improvements (for undocumented features)
+- Integration opportunities with external services
+- User experience improvements
+- Security enhancements
+
+Format your response as a numbered list with one idea per line. Each idea should be specific and actionable.",
+        comprehensive_context
     );
 
     let mut headers = HeaderMap::new();
@@ -214,7 +330,7 @@ IMPORTANT: Format your response as a numbered list with one idea per line.",
         "messages": [
             {
                 "role": "system",
-                "content": "You are a senior software engineer and architect who provides creative, practical development ideas for code repositories. Always format your response as a clear numbered list with one idea per line."
+                "content": "You are a senior software architect who provides creative, practical development ideas for code repositories. You carefully analyze existing code to understand what's already implemented before suggesting new features. You avoid suggesting features that are clearly already present in the codebase."
             },
             { "role": "user", "content": prompt }
         ],
@@ -338,4 +454,3 @@ Write the summary in clear, accessible language.",
     }
     Err("Failed to generate summary".to_string())
 }
-
