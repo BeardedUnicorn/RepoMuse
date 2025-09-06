@@ -1,62 +1,101 @@
 import React, { useState, useEffect } from 'react';
+import { open } from '@tauri-apps/plugin-dialog';
 import FolderSelector from './components/FolderSelector';
 import Settings from './components/Settings';
-import CodeAnalyzer from './components/CodeAnalyzer';
-import IdeaGenerator from './components/IdeaGenerator';
-import { Settings as SettingsType, RepoAnalysis } from './types';
+import ProjectList from './components/ProjectList';
+import ProjectAnalyzer from './components/ProjectAnalyzer';
+import { Settings as SettingsType, ProjectDirectory } from './types';
 import { loadSettings } from './utils/storage';
-import './styles/index.css';
+import { loadRootFolder, saveRootFolder } from './utils/api';
+import './index.css';
 
-type View = 'folder' | 'settings' | 'analyzer' | 'ideas';
+type View = 'folder' | 'settings' | 'workspace';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>('folder');
   const [settings, setSettings] = useState<SettingsType | null>(null);
-  const [selectedFolder, setSelectedFolder] = useState<string>('');
-  const [analysis, setAnalysis] = useState<RepoAnalysis | null>(null);
-  const [ideas, setIdeas] = useState<string[]>([]);
+  const [rootPath, setRootPath] = useState<string>('');
+  const [selectedProject, setSelectedProject] = useState<ProjectDirectory | null>(null);
+  const [isLoadingRoot, setIsLoadingRoot] = useState(true);
 
   useEffect(() => {
     loadSettings().then(setSettings);
+    loadSavedRootFolder();
   }, []);
 
-  const handleFolderSelected = (path: string) => {
-    setSelectedFolder(path);
-    setCurrentView('analyzer');
+  const loadSavedRootFolder = async () => {
+    setIsLoadingRoot(true);
+    try {
+      const savedRoot = await loadRootFolder();
+      if (savedRoot) {
+        setRootPath(savedRoot);
+        setCurrentView('workspace');
+      }
+    } catch (error) {
+      console.error('Error loading saved root folder:', error);
+    } finally {
+      setIsLoadingRoot(false);
+    }
   };
 
-  const handleAnalysisComplete = (analysisResult: RepoAnalysis) => {
-    setAnalysis(analysisResult);
-    setCurrentView('ideas');
+  const handleFolderSelected = async (path: string) => {
+    setRootPath(path);
+    setSelectedProject(null);
+    setCurrentView('workspace');
+    // Save the root folder for next launch
+    try {
+      await saveRootFolder(path);
+    } catch (error) {
+      console.error('Error saving root folder:', error);
+    }
   };
 
-  const handleIdeasGenerated = (generatedIdeas: string[]) => {
-    setIdeas(generatedIdeas);
+  const handleProjectSelect = (project: ProjectDirectory) => {
+    setSelectedProject(project);
+  };
+
+  const selectNewFolder = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+      });
+      
+      if (selected && typeof selected === 'string') {
+        handleFolderSelected(selected);
+      }
+    } catch (error) {
+      console.error('Error selecting folder:', error);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="h-screen bg-gray-50 flex flex-col">
       {/* Navigation */}
-      <nav className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
+      <nav className="bg-white shadow-sm border-b flex-shrink-0">
+        <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-14">
             <div className="flex items-center">
-              <h1 className="text-xl font-bold text-gray-900">Code Repository Analyzer</h1>
+              <h1 className="text-lg font-bold text-gray-900">RepoMuse</h1>
+              {rootPath && (
+                <div className="ml-4 text-sm text-gray-600">
+                  <span className="text-gray-400">•</span>
+                  <span className="ml-2">{rootPath.split(/[/\\]/).pop()}</span>
+                </div>
+              )}
             </div>
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setCurrentView('folder')}
-                className={`px-3 py-2 rounded-md text-sm font-medium ${
-                  currentView === 'folder'
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Select Folder
-              </button>
+            <div className="flex items-center space-x-2">
+              {currentView === 'workspace' && (
+                <button
+                  onClick={selectNewFolder}
+                  className="px-3 py-1.5 text-sm font-medium text-gray-500 hover:text-gray-700 rounded-md"
+                >
+                  Change Root Folder
+                </button>
+              )}
               <button
                 onClick={() => setCurrentView('settings')}
-                className={`px-3 py-2 rounded-md text-sm font-medium ${
+                className={`px-3 py-1.5 rounded-md text-sm font-medium ${
                   currentView === 'settings'
                     ? 'bg-blue-100 text-blue-700'
                     : 'text-gray-500 hover:text-gray-700'
@@ -64,28 +103,12 @@ const App: React.FC = () => {
               >
                 Settings
               </button>
-              {analysis && (
+              {rootPath && currentView !== 'workspace' && (
                 <button
-                  onClick={() => setCurrentView('analyzer')}
-                  className={`px-3 py-2 rounded-md text-sm font-medium ${
-                    currentView === 'analyzer'
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
+                  onClick={() => setCurrentView('workspace')}
+                  className="bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-blue-700"
                 >
-                  Analysis
-                </button>
-              )}
-              {ideas.length > 0 && (
-                <button
-                  onClick={() => setCurrentView('ideas')}
-                  className={`px-3 py-2 rounded-md text-sm font-medium ${
-                    currentView === 'ideas'
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Ideas
+                  Back to Projects
                 </button>
               )}
             </div>
@@ -94,31 +117,50 @@ const App: React.FC = () => {
       </nav>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+      <div className="flex-1 flex overflow-hidden">
         {currentView === 'folder' && (
-          <FolderSelector onFolderSelected={handleFolderSelected} />
+          <div className="flex-1 flex items-center justify-center">
+            <FolderSelector onFolderSelected={handleFolderSelected} />
+          </div>
         )}
         
         {currentView === 'settings' && settings && (
-          <Settings settings={settings} onSettingsUpdated={setSettings} />
+          <div className="flex-1 overflow-y-auto">
+            <div className="max-w-4xl mx-auto py-8 px-4">
+              <Settings settings={settings} onSettingsUpdated={setSettings} />
+            </div>
+          </div>
         )}
         
-        {currentView === 'analyzer' && selectedFolder && (
-          <CodeAnalyzer
-            folderPath={selectedFolder}
-            onAnalysisComplete={handleAnalysisComplete}
-          />
+        {currentView === 'workspace' && rootPath && (
+          <>
+            {/* Left Sidebar - Project List */}
+            <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+              <ProjectList
+                rootPath={rootPath}
+                selectedProject={selectedProject?.path || null}
+                onProjectSelect={handleProjectSelect}
+              />
+            </div>
+            
+            {/* Right Pane - Project Analyzer */}
+            <div className="flex-1 bg-gray-50">
+              {settings ? (
+                <ProjectAnalyzer
+                  selectedProject={selectedProject}
+                  settings={settings}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center text-gray-500">
+                    <p>Loading settings...</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
         )}
-        
-        {currentView === 'ideas' && analysis && settings && (
-          <IdeaGenerator
-            analysis={analysis}
-            settings={settings}
-            onIdeasGenerated={handleIdeasGenerated}
-            ideas={ideas}
-          />
-        )}
-      </main>
+      </div>
     </div>
   );
 };

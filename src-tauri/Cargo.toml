@@ -18,14 +18,19 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2.0", features = ["shell-open"] }
+tauri = { version = "2.0", features = [] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["full", "time"] }
 walkdir = "2"
 ignore = "0.4"
 reqwest = { version = "0.11", features = ["json"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+regex = "1"
+dirs = "5"
+chrono = "0.4"
+rayon = "1.10"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
-
