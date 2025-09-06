@@ -8,6 +8,10 @@ import { Settings as SettingsType, ProjectDirectory } from './types';
 import { loadSettings } from './utils/storage';
 import { loadRootFolder, saveRootFolder } from './utils/api';
 import './index.css';
+import Button from './components/ui/Button';
+import HeaderNav from './components/ui/HeaderNav';
+import ToastProvider from './components/ui/ToastProvider';
+import { basename } from './utils/format';
 
 type View = 'folder' | 'settings' | 'workspace';
 
@@ -16,7 +20,7 @@ const App: React.FC = () => {
   const [settings, setSettings] = useState<SettingsType | null>(null);
   const [rootPath, setRootPath] = useState<string>('');
   const [selectedProject, setSelectedProject] = useState<ProjectDirectory | null>(null);
-  const [isLoadingRoot, setIsLoadingRoot] = useState(true);
+  // removed unused isLoadingRoot
 
   useEffect(() => {
     loadSettings().then(setSettings);
@@ -24,7 +28,6 @@ const App: React.FC = () => {
   }, []);
 
   const loadSavedRootFolder = async () => {
-    setIsLoadingRoot(true);
     try {
       const savedRoot = await loadRootFolder();
       if (savedRoot) {
@@ -34,7 +37,7 @@ const App: React.FC = () => {
     } catch (error) {
       console.error('Error loading saved root folder:', error);
     } finally {
-      setIsLoadingRoot(false);
+      // no-op
     }
   };
 
@@ -70,51 +73,35 @@ const App: React.FC = () => {
   };
 
   return (
+    <ToastProvider>
     <div className="h-screen bg-gray-50 flex flex-col">
       {/* Navigation */}
-      <nav className="bg-white shadow-sm border-b flex-shrink-0">
-        <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-14">
-            <div className="flex items-center">
-              <h1 className="text-lg font-bold text-gray-900">RepoMuse</h1>
-              {rootPath && (
-                <div className="ml-4 text-sm text-gray-600">
-                  <span className="text-gray-400">•</span>
-                  <span className="ml-2">{rootPath.split(/[/\\]/).pop()}</span>
-                </div>
-              )}
-            </div>
-            <div className="flex items-center space-x-2">
-              {currentView === 'workspace' && (
-                <button
-                  onClick={selectNewFolder}
-                  className="px-3 py-1.5 text-sm font-medium text-gray-500 hover:text-gray-700 rounded-md"
-                >
-                  Change Root Folder
-                </button>
-              )}
-              <button
-                onClick={() => setCurrentView('settings')}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium ${
-                  currentView === 'settings'
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Settings
-              </button>
-              {rootPath && currentView !== 'workspace' && (
-                <button
-                  onClick={() => setCurrentView('workspace')}
-                  className="bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-blue-700"
-                >
-                  Back to Projects
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </nav>
+      <HeaderNav
+        title="RepoMuse"
+        subtitle={rootPath ? (<><span className="text-gray-400">•</span><span className="ml-2">{basename(rootPath)}</span></>) : undefined}
+        actions={(
+          <>
+            {currentView === 'workspace' && (
+              <Button variant="ghost" size="sm" onClick={selectNewFolder}>
+                Change Root Folder
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className={currentView === 'settings' ? 'bg-blue-100 text-blue-700' : ''}
+              onClick={() => setCurrentView('settings')}
+            >
+              Settings
+            </Button>
+            {rootPath && currentView !== 'workspace' && (
+              <Button variant="primary" size="sm" onClick={() => setCurrentView('workspace')}>
+                Back to Projects
+              </Button>
+            )}
+          </>
+        )}
+      />
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
@@ -162,6 +149,7 @@ const App: React.FC = () => {
         )}
       </div>
     </div>
+    </ToastProvider>
   );
 };
 

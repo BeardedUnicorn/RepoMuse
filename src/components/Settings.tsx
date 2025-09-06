@@ -2,6 +2,14 @@ import React, { useState } from 'react';
 import { Settings as SettingsType, ModelInfo } from '../types';
 import { saveSettings } from '../utils/storage';
 import { loadModels } from '../utils/api';
+import Button from './ui/Button';
+import Badge from './ui/Badge';
+import TextField from './ui/TextField';
+import Select from './ui/Select';
+import Fieldset from './ui/Fieldset';
+import FormRow from './ui/FormRow';
+import { isThinkingModel } from '../utils/models';
+import { useToast } from './ui/ToastProvider';
 
 interface SettingsProps {
   settings: SettingsType;
@@ -14,21 +22,18 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSettingsUpdated }) => {
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsLoaded, setModelsLoaded] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
-    setSaveStatus('idle');
-
     try {
       await saveSettings(formData);
       onSettingsUpdated(formData);
-      setSaveStatus('success');
-      setTimeout(() => setSaveStatus('idle'), 3000);
+      toast({ title: 'Settings saved', variant: 'success' });
     } catch (error) {
       console.error('Error saving settings:', error);
-      setSaveStatus('error');
+      toast({ title: 'Failed to save settings', description: String(error), variant: 'error' });
     } finally {
       setIsSaving(false);
     }
@@ -52,134 +57,108 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSettingsUpdated }) => {
       const availableModels = await loadModels(formData.api_url, formData.api_key);
       setModels(availableModels);
       setModelsLoaded(true);
+      toast({ title: `Loaded ${availableModels.length} models`, variant: 'success' });
     } catch (error) {
       console.error('Error loading models:', error);
-      alert('Failed to load models. Please check your API URL and key.');
+      toast({ title: 'Failed to load models', description: 'Check API URL and key.', variant: 'error' });
     } finally {
       setIsLoadingModels(false);
     }
   };
 
-  const isThinkingModel = (modelId: string): boolean => {
-    const thinkingModels = ['o1', 'o1-mini', 'o1-preview', 'deepseek-r1'];
-    return thinkingModels.some(name => modelId.toLowerCase().includes(name));
-  };
+  // moved to utils/models
 
   return (
     <div className="max-w-2xl mx-auto">
       <div className="bg-white rounded-lg shadow-md p-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">API Settings</h2>
-        
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label htmlFor="api_url" className="block text-sm font-medium text-gray-700 mb-2">
-              API Server URL
-            </label>
-            <input
-              type="url"
-              id="api_url"
-              name="api_url"
-              value={formData.api_url}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="http://localhost:11434/v1/chat/completions"
-              required
-            />
-            <p className="mt-1 text-sm text-gray-500">
-              OpenAI-compatible API endpoint (e.g., Ollama, OpenAI, Azure OpenAI)
-            </p>
-          </div>
-
-          <div>
-            <label htmlFor="api_key" className="block text-sm font-medium text-gray-700 mb-2">
-              API Key
-            </label>
-            <input
-              type="password"
-              id="api_key"
-              name="api_key"
-              value={formData.api_key}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Your API key (leave empty for local APIs like Ollama)"
-            />
-            <p className="mt-1 text-sm text-gray-500">
-              Leave empty if your API doesn't require authentication
-            </p>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label htmlFor="model" className="block text-sm font-medium text-gray-700">
-                Model
-              </label>
-              <button
-                type="button"
-                onClick={handleLoadModels}
-                disabled={isLoadingModels || !formData.api_url}
-                className="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isLoadingModels ? 'Loading...' : 'Load Models'}
-              </button>
-            </div>
-            
-            {modelsLoaded && models.length > 0 ? (
-              <select
-                id="model"
-                name="model"
-                value={formData.model}
+        <Fieldset title="API Settings">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <FormRow>
+              <TextField
+                label="API Server URL"
+                type="url"
+                id="api_url"
+                name="api_url"
+                value={formData.api_url}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="http://localhost:11434/v1/chat/completions"
                 required
-              >
-                <option value="">Select a model...</option>
-                {models.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name || model.id}
-                    {isThinkingModel(model.id) && ' (Thinking Model)'}
-                    {model.description && ` - ${model.description}`}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                type="text"
-                id="model"
-                name="model"
-                value={formData.model}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="llama2, gpt-3.5-turbo, gpt-4, o1-mini, etc."
-                required
+                helpText="OpenAI-compatible API endpoint (e.g., Ollama, OpenAI, Azure OpenAI)"
               />
-            )}
-            
-            <p className="mt-1 text-sm text-gray-500">
-              {isThinkingModel(formData.model) 
-                ? "This is a thinking model - it will use <think></think> tags for reasoning"
-                : "The model to use for generating ideas. Click 'Load Models' to see available options"
-              }
-            </p>
-          </div>
+            </FormRow>
 
-          <div className="flex items-center justify-between">
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSaving ? 'Saving...' : 'Save Settings'}
-            </button>
+            <FormRow>
+              <TextField
+                label="API Key"
+                type="password"
+                id="api_key"
+                name="api_key"
+                value={formData.api_key}
+                onChange={handleChange}
+                placeholder="Your API key (leave empty for local APIs like Ollama)"
+                helpText="Leave empty if your API doesn't require authentication"
+              />
+            </FormRow>
 
-            {saveStatus === 'success' && (
-              <span className="text-green-600 text-sm font-medium">Settings saved successfully!</span>
-            )}
+            <FormRow>
+              <div className="flex items-center justify-between mb-2">
+                <label htmlFor="model" className="block text-sm font-medium text-gray-700">
+                  Model
+                </label>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleLoadModels}
+                  disabled={isLoadingModels || !formData.api_url}
+                  loading={isLoadingModels}
+                >
+                  Load Models
+                </Button>
+              </div>
 
-            {saveStatus === 'error' && (
-              <span className="text-red-600 text-sm font-medium">Error saving settings</span>
-            )}
-          </div>
-        </form>
+              {modelsLoaded && models.length > 0 ? (
+                <Select
+                  label="Model"
+                  id="model"
+                  name="model"
+                  value={formData.model}
+                  onChange={handleChange}
+                  required
+                >
+                  <option value="">Select a model...</option>
+                  {models.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name || model.id}
+                      {isThinkingModel(model.id) && ' (Thinking Model)'}
+                      {model.description && ` - ${model.description}`}
+                    </option>
+                  ))}
+                </Select>
+              ) : (
+                <TextField
+                  label="Model"
+                  type="text"
+                  id="model"
+                  name="model"
+                  value={formData.model}
+                  onChange={handleChange}
+                  placeholder="llama2, gpt-3.5-turbo, gpt-4, o1-mini, etc."
+                  required
+                />
+              )}
+              <p className="mt-1 text-sm text-gray-500">
+                {isThinkingModel(formData.model)
+                  ? 'This is a thinking model - it will use <think></think> tags for reasoning'
+                  : "The model to use for generating ideas. Click 'Load Models' to see available options"}
+              </p>
+            </FormRow>
+
+            <div className="flex items-center justify-between">
+              <Button type="submit" variant="primary" loading={isSaving}>Save Settings</Button>
+            </div>
+          </form>
+        </Fieldset>
 
         {models.length > 0 && (
           <div className="mt-8 p-4 bg-blue-50 rounded-md">
@@ -190,9 +169,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSettingsUpdated }) => {
                   <div>
                     <span className="font-medium">{model.name || model.id}</span>
                     {isThinkingModel(model.id) && (
-                      <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                        Thinking Model
-                      </span>
+                      <Badge variant="purple">Thinking Model</Badge>
                     )}
                   </div>
                   {model.description && (

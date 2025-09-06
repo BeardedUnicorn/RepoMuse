@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
+import { Folder } from 'lucide-react';
 
 interface FolderSelectorProps {
   onFolderSelected: (path: string) => void;
@@ -31,19 +32,7 @@ const FolderSelector: React.FC<FolderSelectorProps> = ({ onFolderSelected }) => 
       <div className="max-w-md mx-auto">
         <div className="bg-white rounded-lg shadow-md p-8">
           <div className="mb-6">
-            <svg
-              className="mx-auto h-16 w-16 text-gray-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1}
-                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z"
-              />
-            </svg>
+            <Folder className="mx-auto h-16 w-16 text-gray-400" />
           </div>
           
           <h2 className="text-2xl font-bold text-gray-900 mb-4">
