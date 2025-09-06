@@ -1,7 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 use walkdir::WalkDir;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitRemote {
+  pub name: String,
+  pub url: String,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GitStatus {
@@ -11,6 +18,7 @@ pub struct GitStatus {
   pub current_branch: Option<String>,
   pub last_commit_date: Option<String>,
   pub commit_count: Option<usize>,
+  pub remotes: Vec<GitRemote>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -57,8 +65,53 @@ pub struct ProjectInsights {
   pub testing_info: TestingInfo,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitCommit {
+  pub hash: String,
+  pub author: String,
+  pub date: String,
+  pub message: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitLog {
+  pub commits: Vec<GitCommit>,
+  pub total_commits: usize,
+  pub branches: Vec<String>,
+  pub current_branch: Option<String>,
+}
+
 fn get_git_status(path: &Path) -> GitStatus {
   let is_git_repo = path.join(".git").exists();
+  
+  let mut remotes = Vec::new();
+  if is_git_repo {
+    // Get git remotes
+    if let Ok(output) = Command::new("git")
+      .args(&["remote", "-v"])
+      .current_dir(path)
+      .output() 
+    {
+      if output.status.success() {
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        let mut seen_remotes = std::collections::HashSet::new();
+        
+        for line in output_str.lines() {
+          let parts: Vec<&str> = line.split_whitespace().collect();
+          if parts.len() >= 2 {
+            let name = parts[0].to_string();
+            let url = parts[1].to_string();
+            
+            // Only add each remote once (git remote -v shows fetch and push)
+            if seen_remotes.insert(name.clone()) {
+              remotes.push(GitRemote { name, url });
+            }
+          }
+        }
+      }
+    }
+  }
+  
   GitStatus {
     is_git_repo,
     has_uncommitted_changes: false,
@@ -66,6 +119,7 @@ fn get_git_status(path: &Path) -> GitStatus {
     current_branch: None,
     last_commit_date: None,
     commit_count: None,
+    remotes,
   }
 }
 
@@ -182,4 +236,103 @@ pub async fn get_project_insights(project_path: String) -> Result<ProjectInsight
   let package_info = get_package_info(path);
   let testing_info = get_testing_info(path);
   Ok(ProjectInsights { git_status, readme_info, ci_info, package_info, testing_info })
+}
+
+#[tauri::command]
+pub async fn get_git_log(project_path: String) -> Result<GitLog, String> {
+  let path = Path::new(&project_path);
+  if !path.exists() || !path.is_dir() {
+    return Err("Invalid project path".to_string());
+  }
+
+  if !path.join(".git").exists() {
+    return Err("Not a git repository".to_string());
+  }
+
+  // Get current branch
+  let current_branch = Command::new("git")
+    .args(&["rev-parse", "--abbrev-ref", "HEAD"])
+    .current_dir(path)
+    .output()
+    .ok()
+    .and_then(|output| {
+      if output.status.success() {
+        String::from_utf8(output.stdout)
+          .ok()
+          .map(|s| s.trim().to_string())
+      } else {
+        None
+      }
+    });
+
+  // Get all branches
+  let branches_output = Command::new("git")
+    .args(&["branch", "-a"])
+    .current_dir(path)
+    .output()
+    .map_err(|e| format!("Failed to get branches: {}", e))?;
+
+  let branches: Vec<String> = if branches_output.status.success() {
+    String::from_utf8_lossy(&branches_output.stdout)
+      .lines()
+      .map(|line| line.trim().trim_start_matches("* ").to_string())
+      .filter(|line| !line.is_empty())
+      .collect()
+  } else {
+    Vec::new()
+  };
+
+  // Get git log (last 100 commits)
+  let log_output = Command::new("git")
+    .args(&[
+      "log",
+      "-100",
+      "--pretty=format:%H%n%an%n%aI%n%s%n---COMMIT-SEPARATOR---"
+    ])
+    .current_dir(path)
+    .output()
+    .map_err(|e| format!("Failed to get git log: {}", e))?;
+
+  if !log_output.status.success() {
+    return Err("Failed to retrieve git log".to_string());
+  }
+
+  let log_text = String::from_utf8_lossy(&log_output.stdout);
+  let mut commits = Vec::new();
+
+  for commit_block in log_text.split("---COMMIT-SEPARATOR---") {
+    let lines: Vec<&str> = commit_block.trim().lines().collect();
+    if lines.len() >= 4 {
+      commits.push(GitCommit {
+        hash: lines[0].to_string(),
+        author: lines[1].to_string(),
+        date: lines[2].to_string(),
+        message: lines[3..].join("\n"),
+      });
+    }
+  }
+
+  // Get total commit count
+  let count_output = Command::new("git")
+    .args(&["rev-list", "--count", "HEAD"])
+    .current_dir(path)
+    .output()
+    .ok()
+    .and_then(|output| {
+      if output.status.success() {
+        String::from_utf8(output.stdout)
+          .ok()
+          .and_then(|s| s.trim().parse::<usize>().ok())
+      } else {
+        None
+      }
+    })
+    .unwrap_or(commits.len());
+
+  Ok(GitLog {
+    commits,
+    total_commits: count_output,
+    branches,
+    current_branch,
+  })
 }

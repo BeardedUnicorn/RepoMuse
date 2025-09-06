@@ -29,7 +29,8 @@ fn main() {
             storage::load_root_folder,
             projects::update_project_file_count,
             projects::clear_file_count_cache,
-            insights::get_project_insights
+            insights::get_project_insights,
+            insights::get_git_log
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

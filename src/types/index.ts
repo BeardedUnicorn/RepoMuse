@@ -54,6 +54,11 @@ export interface SummaryRequest {
   project_path?: string;
 }
 
+export interface GitRemote {
+  name: string;
+  url: string;
+}
+
 export interface GitStatus {
   is_git_repo: boolean;
   has_uncommitted_changes: boolean;
@@ -61,6 +66,7 @@ export interface GitStatus {
   current_branch?: string;
   last_commit_date?: string;
   commit_count?: number;
+  remotes: GitRemote[];
 }
 
 export interface ReadmeInfo {
@@ -100,4 +106,18 @@ export interface ProjectInsights {
   ci_info: CIInfo;
   package_info: PackageInfo;
   testing_info: TestingInfo;
+}
+
+export interface GitCommit {
+  hash: string;
+  author: string;
+  date: string;
+  message: string;
+}
+
+export interface GitLog {
+  commits: GitCommit[];
+  total_commits: number;
+  branches: string[];
+  current_branch?: string;
 }
