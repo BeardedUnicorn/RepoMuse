@@ -11,19 +11,19 @@ type AlertProps = {
 
 const styles: Record<Variant, { container: string; title: string; text: string }> = {
   error: {
-    container: 'bg-red-50 border border-red-200',
-    title: 'text-red-800',
-    text: 'text-red-600',
+    container: 'bg-error-background border border-error/20',
+    title: 'text-error',
+    text: 'text-error/80',
   },
   info: {
-    container: 'bg-blue-50 border border-blue-200',
-    title: 'text-blue-800',
-    text: 'text-blue-700',
+    container: 'bg-info-background border border-info/20',
+    title: 'text-info',
+    text: 'text-info/80',
   },
   success: {
-    container: 'bg-green-50 border border-green-200',
-    title: 'text-green-800',
-    text: 'text-green-700',
+    container: 'bg-success-background border border-success/20',
+    title: 'text-success',
+    text: 'text-success/80',
   },
 };
 

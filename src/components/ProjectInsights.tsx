@@ -9,15 +9,15 @@ type Props = {
 
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <Card className="p-4">
-    <h3 className="text-sm font-semibold text-gray-900 mb-3">{title}</h3>
+    <h3 className="text-sm font-semibold text-foreground mb-3">{title}</h3>
     {children}
   </Card>
 );
 
 const Row: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
   <div className="flex justify-between text-sm py-1">
-    <span className="text-gray-600">{label}</span>
-    <span className="text-gray-900">{value}</span>
+    <span className="text-foreground-secondary">{label}</span>
+    <span className="text-foreground">{value}</span>
   </div>
 );
 
@@ -58,7 +58,7 @@ const ProjectInsightsComponent: React.FC<Props> = ({ insights }) => {
         </div>
         {package_info.missing_common_files.length > 0 && (
           <div className="mt-2">
-            <div className="text-xs text-gray-600 mb-1">Missing common files:</div>
+            <div className="text-xs text-foreground-secondary mb-1">Missing common files:</div>
             <div className="flex flex-wrap gap-2 text-xs">
               {package_info.missing_common_files.map((f) => (
                 <Badge key={f} variant="red">{f}</Badge>
@@ -87,4 +87,3 @@ const ProjectInsightsComponent: React.FC<Props> = ({ insights }) => {
 };
 
 export default ProjectInsightsComponent;
-

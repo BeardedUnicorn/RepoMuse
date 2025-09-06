@@ -66,7 +66,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ rootPath, selectedProject, on
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-8 text-gray-600">
+      <div className="flex items-center justify-center py-8 text-foreground-secondary">
         <Spinner size="sm" color="blue" />
         <span className="ml-2">Loading projects...</span>
       </div>
@@ -78,7 +78,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ rootPath, selectedProject, on
       <div className="p-4">
         <Alert variant="error" title="Error loading projects">{error}</Alert>
         <div className="mt-2">
-          <button onClick={loadProjects} className="text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700">Retry</button>
+          <button onClick={loadProjects} className="text-xs bg-error text-error-foreground px-2 py-1 rounded hover:bg-error/90">Retry</button>
         </div>
       </div>
     );
@@ -88,7 +88,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ rootPath, selectedProject, on
     return (
       <div className="p-4">
         <EmptyState
-          icon={<Folder className="h-12 w-12 text-gray-300" />}
+          icon={<Folder className="h-12 w-12 text-foreground-tertiary" />}
           title="No projects found"
           subtitle="Projects are identified by files like package.json, Cargo.toml, etc."
         />
@@ -98,12 +98,12 @@ const ProjectList: React.FC<ProjectListProps> = ({ rootPath, selectedProject, on
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="p-3 border-b border-gray-200 bg-gray-50">
-        <h3 className="font-semibold text-gray-900 text-sm">Projects ({projects.length})</h3>
-        <p className="text-xs text-gray-500 mt-1">{basename(rootPath)}</p>
+      <div className="p-3 border-b border-border bg-background-tertiary">
+        <h3 className="font-semibold text-foreground text-sm">Projects ({projects.length})</h3>
+        <p className="text-xs text-foreground-secondary mt-1">{basename(rootPath)}</p>
       </div>
       
-      <div className="divide-y divide-gray-100">
+      <div className="divide-y divide-border">
         {projects.map((project) => (
           <SidebarListItem
             key={project.path}
@@ -111,13 +111,13 @@ const ProjectList: React.FC<ProjectListProps> = ({ rootPath, selectedProject, on
             onClick={() => onProjectSelect(project)}
             title={project.name}
             subtitle={project.description}
-            left={project.is_git_repo ? <GitBranch className="h-3 w-3 text-gray-500" /> : null}
+            left={project.is_git_repo ? <GitBranch className="h-3 w-3 text-foreground-tertiary" /> : null}
             meta={
               <span className="flex items-center">
                 <FileText className="h-3 w-3 mr-1" />
                 {project.file_count} files
                 {project.is_counting && (
-                  <span className="ml-1 text-blue-500 animate-pulse">(counting...)</span>
+                  <span className="ml-1 text-primary animate-pulse">(counting...)</span>
                 )}
               </span>
             }

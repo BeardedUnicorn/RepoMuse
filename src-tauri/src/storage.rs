@@ -8,6 +8,39 @@ pub struct Settings {
     pub api_key: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ThemePreference {
+    pub theme: String, // "light" or "dark" or "system"
+    pub last_updated: String,
+}
+
+#[tauri::command]
+pub async fn save_theme_preference(theme: String) -> Result<(), String> {
+    let dir = app_dir()?;
+    if !dir.exists() { 
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?; 
+    }
+    let path = dir.join("theme.json");
+    let preference = ThemePreference {
+        theme,
+        last_updated: chrono::Utc::now().to_rfc3339(),
+    };
+    let json = serde_json::to_string_pretty(&preference).map_err(|e| e.to_string())?;
+    fs::write(path, json).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn load_theme_preference() -> Result<Option<String>, String> {
+    let dir = app_dir()?;
+    let path = dir.join("theme.json");
+    if !path.exists() { 
+        return Ok(None); 
+    }
+    let s = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let preference: ThemePreference = serde_json::from_str(&s).map_err(|e| e.to_string())?;
+    Ok(Some(preference.theme))
+}
+
 fn app_dir() -> Result<std::path::PathBuf, String> {
     dirs::data_local_dir()
         .ok_or("Failed to get app data directory".to_string())

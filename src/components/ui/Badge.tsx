@@ -9,11 +9,11 @@ type BadgeProps = {
 };
 
 const variants: Record<Variant, string> = {
-  green: 'bg-green-100 text-green-800',
-  purple: 'bg-purple-100 text-purple-800',
-  gray: 'bg-gray-100 text-gray-800',
-  blue: 'bg-blue-100 text-blue-800',
-  red: 'bg-red-100 text-red-800',
+  green: 'bg-success/10 text-success dark:bg-success/20',
+  purple: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
+  gray: 'bg-background-tertiary text-foreground-secondary',
+  blue: 'bg-info/10 text-info dark:bg-info/20',
+  red: 'bg-error/10 text-error dark:bg-error/20',
 };
 
 const Badge: React.FC<BadgeProps> = ({ variant = 'gray', children, className = '' }) => (

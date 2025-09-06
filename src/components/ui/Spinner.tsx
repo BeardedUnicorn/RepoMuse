@@ -13,9 +13,9 @@ const sizeMap = {
 };
 
 const colorMap = {
-  blue: 'border-blue-600',
-  green: 'border-green-600',
-  gray: 'border-gray-500',
+  blue: 'border-primary',
+  green: 'border-success',
+  gray: 'border-foreground-secondary',
 };
 
 const Spinner: React.FC<SpinnerProps> = ({ size = 'md', color = 'gray', className = '' }) => {
@@ -27,4 +27,3 @@ const Spinner: React.FC<SpinnerProps> = ({ size = 'md', color = 'gray', classNam
 };
 
 export default Spinner;
-

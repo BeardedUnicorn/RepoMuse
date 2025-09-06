@@ -13,8 +13,8 @@ const Fieldset: React.FC<FieldsetProps> = ({ title, description, actions, childr
     <section className={`mb-6 ${className}`}>
       <div className="flex items-start justify-between mb-3">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-          {description && <p className="text-sm text-gray-600 mt-1">{description}</p>}
+          <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+          {description && <p className="text-sm text-foreground-secondary mt-1">{description}</p>}
         </div>
         {actions && <div className="ml-4">{actions}</div>}
       </div>
@@ -24,4 +24,3 @@ const Fieldset: React.FC<FieldsetProps> = ({ title, description, actions, childr
 };
 
 export default Fieldset;
-

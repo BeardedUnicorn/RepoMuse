@@ -23,9 +23,9 @@ export const useToast = () => {
 };
 
 const variantMap: Record<ToastVariant, string> = {
-  success: 'bg-green-600',
-  error: 'bg-red-600',
-  info: 'bg-blue-600',
+  success: 'bg-success',
+  error: 'bg-error',
+  info: 'bg-info',
 };
 
 const ToastProvider: React.FC<{ children: React.ReactNode } & { position?: 'bottom-right' | 'top-right' | 'bottom-left' | 'top-left' }> = ({ children, position = 'bottom-right' }) => {
@@ -64,7 +64,7 @@ const ToastProvider: React.FC<{ children: React.ReactNode } & { position?: 'bott
           <div key={t.id} className="shadow-lg rounded-md overflow-hidden min-w-[260px] max-w-sm">
             <div className={`${variantMap[t.variant || 'info']} text-white px-3 py-2 text-sm font-medium`}>{t.title}</div>
             {t.description && (
-              <div className="bg-white px-3 py-2 text-sm text-gray-700 border border-t-0 border-gray-200">{t.description}</div>
+              <div className="bg-background-secondary px-3 py-2 text-sm text-foreground border border-t-0 border-border">{t.description}</div>
             )}
           </div>
         ))}
@@ -74,4 +74,3 @@ const ToastProvider: React.FC<{ children: React.ReactNode } & { position?: 'bott
 };
 
 export default ToastProvider;
-

@@ -21,6 +21,8 @@ fn main() {
             storage::load_settings,
             ai::load_models,
             ai::generate_project_summary,
+            storage::save_theme_preference,
+            storage::load_theme_preference,
             storage::save_project_summary,
             storage::load_project_summary,
             storage::save_root_folder,

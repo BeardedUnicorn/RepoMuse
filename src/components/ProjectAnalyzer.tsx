@@ -165,7 +165,7 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
     return (
       <div className="flex items-center justify-center h-full">
         <EmptyState
-          icon={<FileText className="h-16 w-16 text-gray-300" />}
+          icon={<FileText className="h-16 w-16 text-foreground-tertiary" />}
           title="Select a Project"
           subtitle="Choose a project from the left sidebar to analyze and generate ideas"
         />
@@ -187,7 +187,7 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto">
         {isAnalyzing && (
-          <div className="flex items-center justify-center py-12 text-gray-600">
+          <div className="flex items-center justify-center py-12 text-foreground-secondary">
             <Spinner color="blue" size="md" />
             <p className="ml-4">Analyzing project...</p>
           </div>
@@ -207,11 +207,11 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
             {/* Analysis Summary */}
             <Card className="p-6 mb-6">
               <div className="flex justify-between items-center mb-2">
-                <h2 className="text-lg font-semibold text-gray-900">Project Analysis</h2>
+                <h2 className="text-lg font-semibold text-foreground">Project Analysis</h2>
                 <Button variant="secondary" onClick={refreshAnalysis}>Refresh Analysis</Button>
               </div>
               {analysis.generated_at && (
-                <p className="text-xs text-gray-500 mb-4">
+                <p className="text-xs text-foreground-tertiary mb-4">
                   Last analyzed: {new Date(analysis.generated_at).toLocaleString()}
                   {analysis.from_cache ? ' (cached)' : ''}
                 </p>
@@ -222,10 +222,10 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
                 <StatTile label="Analyzed Files" value={analysis.metrics.analyzed_files} color="purple" />
               </div>
               <div className="mb-6">
-                <h3 className="text-md font-semibold text-gray-900 mb-3">Technologies Detected</h3>
+                <h3 className="text-md font-semibold text-foreground mb-3">Technologies Detected</h3>
                 <div className="flex flex-wrap gap-2">
                   {analysis.technologies.map((tech) => (
-                    <span key={tech} className="bg-gray-100 text-gray-800 px-3 py-1 rounded-full text-sm">
+                    <span key={tech} className="bg-background-tertiary text-foreground px-3 py-1 rounded-full text-sm">
                       {tech}
                     </span>
                   ))}
@@ -251,10 +251,10 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
                       </div>
 
                       {isGeneratingSummary && (
-                        <div className="text-center py-8 text-gray-600">
+                        <div className="text-center py-8 text-foreground-secondary">
                           <Spinner color="blue" />
                           <p className="mt-4">Generating AI summary...</p>
-                          <p className="text-sm text-gray-500">This may take a moment...</p>
+                          <p className="text-sm text-foreground-tertiary">This may take a moment...</p>
                         </div>
                       )}
 
@@ -269,7 +269,7 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
 
                       {!summary && !isGeneratingSummary && !summaryError && (
                         <EmptyState
-                          icon={<Lightbulb className="h-12 w-12 text-gray-300" />}
+                          icon={<Lightbulb className="h-12 w-12 text-foreground-tertiary" />}
                           title="No summary generated yet"
                           subtitle='Click "Generate Summary" to get an AI-powered overview of this project'
                         />
@@ -277,26 +277,26 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
 
                       {summary && (
                         <div className="space-y-4">
-                          <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-800 prose-ul:text-gray-700 prose-li:text-gray-700">
+                          <div className="prose prose-sm max-w-none prose-headings:text-foreground prose-p:text-foreground-secondary prose-strong:text-foreground prose-ul:text-foreground-secondary prose-li:text-foreground-secondary dark:prose-invert">
                             <MarkdownRenderer markdown={summary.summary} />
                           </div>
                           
                           {summary.key_features.length > 0 && (
                             <div className="mt-4">
-                              <h3 className="text-sm font-semibold text-gray-900 mb-2">Key Features:</h3>
+                              <h3 className="text-sm font-semibold text-foreground mb-2">Key Features:</h3>
                               <ul className="space-y-1">
                                 {summary.key_features.map((feature, index) => (
                                   <li key={index} className="flex items-start">
-                                    <span className="text-blue-500 mr-2">•</span>
-                                    <span className="text-gray-700 text-sm">{feature}</span>
+                                    <span className="text-primary mr-2">•</span>
+                                    <span className="text-foreground-secondary text-sm">{feature}</span>
                                   </li>
                                 ))}
                               </ul>
                             </div>
                           )}
                           
-                          <div className="mt-4 pt-4 border-t border-gray-200">
-                            <p className="text-xs text-gray-500">
+                          <div className="mt-4 pt-4 border-t border-border">
+                            <p className="text-xs text-foreground-tertiary">
                               Generated: {new Date(summary.generated_at).toLocaleString()}
                             </p>
                           </div>
@@ -321,10 +321,10 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
                       </div>
 
                       {isGeneratingIdeas && (
-                        <div className="text-center py-8 text-gray-600">
+                        <div className="text-center py-8 text-foreground-secondary">
                           <Spinner color="green" />
                           <p className="mt-4">Generating creative ideas...</p>
-                          <p className="text-sm text-gray-500">This may take a moment...</p>
+                          <p className="text-sm text-foreground-tertiary">This may take a moment...</p>
                         </div>
                       )}
 
@@ -339,7 +339,7 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
 
                       {ideas.length === 0 && !isGeneratingIdeas && !ideasError && (
                         <EmptyState
-                          icon={<Lightbulb className="h-12 w-12 text-gray-300" />}
+                          icon={<Lightbulb className="h-12 w-12 text-foreground-tertiary" />}
                           title="No ideas generated yet"
                           subtitle='Click "Generate Ideas" to get AI-powered development suggestions'
                         />
@@ -350,16 +350,16 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
                           {ideas.map((idea, index) => (
                             <div
                               key={index}
-                              className="border-l-4 border-green-500 bg-green-50 p-4 rounded-r-md"
+                              className="border-l-4 border-success bg-success/10 dark:bg-success/20 p-4 rounded-r-md"
                             >
                               <div className="flex items-start">
                                 <div className="flex-shrink-0">
-                                  <span className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-medium">
+                                  <span className="bg-success text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-medium">
                                     {index + 1}
                                   </span>
                                 </div>
                                 <div className="ml-3">
-                                  <p className="text-gray-800 whitespace-pre-line">{idea}</p>
+                                  <p className="text-foreground whitespace-pre-line">{idea}</p>
                                 </div>
                               </div>
                             </div>
@@ -376,7 +376,7 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
                   content: (
                     <div>
                       {isLoadingInsights && (
-                        <div className="text-center py-8 text-gray-600">
+                        <div className="text-center py-8 text-foreground-secondary">
                           <Spinner color="blue" />
                           <p className="mt-4">Analyzing project health...</p>
                         </div>
@@ -397,7 +397,7 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
 
                       {!insights && !isLoadingInsights && !insightsError && (
                         <EmptyState
-                          icon={<TrendingUp className="h-12 w-12 text-gray-300" />}
+                          icon={<TrendingUp className="h-12 w-12 text-foreground-tertiary" />}
                           title="No insights available"
                           subtitle="Unable to analyze project health"
                         />

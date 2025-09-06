@@ -66,11 +66,9 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSettingsUpdated }) => {
     }
   };
 
-  // moved to utils/models
-
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="bg-white rounded-lg shadow-md p-8">
+      <div className="bg-background-secondary rounded-lg shadow-md p-8 border border-border">
         <Fieldset title="API Settings">
           <form onSubmit={handleSubmit} className="space-y-6">
             <FormRow>
@@ -102,7 +100,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSettingsUpdated }) => {
 
             <FormRow>
               <div className="flex items-center justify-between mb-2">
-                <label htmlFor="model" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="model" className="block text-sm font-medium text-foreground">
                   Model
                 </label>
                 <Button
@@ -147,7 +145,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSettingsUpdated }) => {
                   required
                 />
               )}
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mt-1 text-sm text-foreground-secondary">
                 {isThinkingModel(formData.model)
                   ? 'This is a thinking model - it will use <think></think> tags for reasoning'
                   : "The model to use for generating ideas. Click 'Load Models' to see available options"}
@@ -161,19 +159,19 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSettingsUpdated }) => {
         </Fieldset>
 
         {models.length > 0 && (
-          <div className="mt-8 p-4 bg-blue-50 rounded-md">
-            <h3 className="text-lg font-medium text-blue-900 mb-2">Available Models ({models.length})</h3>
+          <div className="mt-8 p-4 bg-info/10 dark:bg-info/20 rounded-md">
+            <h3 className="text-lg font-medium text-foreground mb-2">Available Models ({models.length})</h3>
             <div className="grid gap-2 text-sm max-h-48 overflow-y-auto">
               {models.map((model) => (
-                <div key={model.id} className="flex justify-between items-center p-2 bg-white rounded border">
+                <div key={model.id} className="flex justify-between items-center p-2 bg-background rounded border border-border">
                   <div>
-                    <span className="font-medium">{model.name || model.id}</span>
+                    <span className="font-medium text-foreground">{model.name || model.id}</span>
                     {isThinkingModel(model.id) && (
-                      <Badge variant="purple">Thinking Model</Badge>
+                      <Badge variant="purple" className="ml-2">Thinking Model</Badge>
                     )}
                   </div>
                   {model.description && (
-                    <span className="text-gray-500 text-xs">{model.description}</span>
+                    <span className="text-foreground-tertiary text-xs">{model.description}</span>
                   )}
                 </div>
               ))}
@@ -181,23 +179,23 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSettingsUpdated }) => {
           </div>
         )}
 
-        <div className="mt-8 p-4 bg-gray-50 rounded-md">
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Popular API Configurations</h3>
-          <div className="space-y-3 text-sm">
+        <div className="mt-8 p-4 bg-background-tertiary rounded-md">
+          <h3 className="text-lg font-medium text-foreground mb-2">Popular API Configurations</h3>
+          <div className="space-y-3 text-sm text-foreground-secondary">
             <div>
-              <strong>Ollama (Local):</strong><br />
+              <strong className="text-foreground">Ollama (Local):</strong><br />
               URL: http://localhost:11434/v1/chat/completions<br />
               Models: llama2, codellama, deepseek-r1, etc.<br />
               API Key: (leave empty)
             </div>
             <div>
-              <strong>OpenAI:</strong><br />
+              <strong className="text-foreground">OpenAI:</strong><br />
               URL: https://api.openai.com/v1/chat/completions<br />
               Models: gpt-3.5-turbo, gpt-4, o1-mini, o1-preview<br />
               API Key: Your OpenAI API key
             </div>
             <div>
-              <strong>DeepSeek:</strong><br />
+              <strong className="text-foreground">DeepSeek:</strong><br />
               URL: https://api.deepseek.com/v1/chat/completions<br />
               Models: deepseek-chat, deepseek-r1 (thinking)<br />
               API Key: Your DeepSeek API key
@@ -205,11 +203,11 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSettingsUpdated }) => {
           </div>
         </div>
 
-        <div className="mt-6 p-4 bg-purple-50 rounded-md">
-          <h3 className="text-lg font-medium text-purple-900 mb-2">🧠 Thinking Models</h3>
-          <p className="text-sm text-purple-800">
+        <div className="mt-6 p-4 bg-purple-100 dark:bg-purple-900/30 rounded-md">
+          <h3 className="text-lg font-medium text-purple-900 dark:text-purple-400 mb-2">🧠 Thinking Models</h3>
+          <p className="text-sm text-purple-800 dark:text-purple-300">
             Thinking models like OpenAI's o1, o1-mini, or DeepSeek's R1 use special reasoning patterns. 
-            They enclose their reasoning in <span className="font-mono bg-purple-100 px-1 rounded">&lt;think&gt;...&lt;/think&gt;</span> tags, 
+            They enclose their reasoning in <span className="font-mono bg-purple-200 dark:bg-purple-800/50 px-1 rounded">&lt;think&gt;...&lt;/think&gt;</span> tags, 
             which this app automatically filters out to show only the final response.
           </p>
         </div>

@@ -2,6 +2,68 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  :root {
+    /* Light mode colors */
+    --background: 249 250 251; /* gray-50 */
+    --background-secondary: 255 255 255; /* white */
+    --background-tertiary: 243 244 246; /* gray-100 */
+    
+    --foreground: 17 24 39; /* gray-900 */
+    --foreground-secondary: 75 85 99; /* gray-600 */
+    --foreground-tertiary: 156 163 175; /* gray-400 */
+    
+    --border: 229 231 235; /* gray-200 */
+    --border-secondary: 209 213 219; /* gray-300 */
+    
+    --primary: 37 99 235; /* blue-600 */
+    --primary-hover: 29 78 216; /* blue-700 */
+    --primary-foreground: 255 255 255; /* white */
+    
+    --success: 34 197 94; /* green-600 */
+    --success-foreground: 255 255 255; /* white */
+    --success-background: 240 253 244; /* green-50 */
+    
+    --error: 220 38 38; /* red-600 */
+    --error-foreground: 255 255 255; /* white */
+    --error-background: 254 242 242; /* red-50 */
+    
+    --info: 37 99 235; /* blue-600 */
+    --info-foreground: 255 255 255; /* white */
+    --info-background: 239 246 255; /* blue-50 */
+  }
+  
+  .dark {
+    /* Dark mode colors */
+    --background: 17 24 39; /* gray-900 */
+    --background-secondary: 31 41 55; /* gray-800 */
+    --background-tertiary: 55 65 81; /* gray-700 */
+    
+    --foreground: 243 244 246; /* gray-100 */
+    --foreground-secondary: 209 213 219; /* gray-300 */
+    --foreground-tertiary: 156 163 175; /* gray-400 */
+    
+    --border: 55 65 81; /* gray-700 */
+    --border-secondary: 75 85 99; /* gray-600 */
+    
+    --primary: 59 130 246; /* blue-500 */
+    --primary-hover: 96 165 250; /* blue-400 */
+    --primary-foreground: 255 255 255; /* white */
+    
+    --success: 34 197 94; /* green-600 */
+    --success-foreground: 255 255 255; /* white */
+    --success-background: 22 101 52; /* green-800 */
+    
+    --error: 239 68 68; /* red-500 */
+    --error-foreground: 255 255 255; /* white */
+    --error-background: 127 29 29; /* red-900 */
+    
+    --info: 59 130 246; /* blue-500 */
+    --info-foreground: 255 255 255; /* white */
+    --info-background: 30 58 138; /* blue-900 */
+  }
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -14,9 +76,32 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  @apply bg-background text-foreground;
 }
 
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
+}
+
+/* Smooth transitions for theme changes */
+* {
+  @apply transition-colors duration-200;
+}
+
+/* Scrollbar styling for dark mode */
+.dark ::-webkit-scrollbar {
+  @apply w-2 h-2;
+}
+
+.dark ::-webkit-scrollbar-track {
+  @apply bg-background-secondary;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  @apply bg-border-secondary rounded-full;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  @apply bg-border;
 }

@@ -14,19 +14,19 @@ const SidebarListItem: React.FC<SidebarListItemProps> = ({ selected, onClick, ti
     <div
       onClick={onClick}
       className={`${
-        selected ? 'border-blue-500 bg-blue-50' : 'border-transparent'
-      } p-4 cursor-pointer hover:bg-blue-50 border-l-4`}
+        selected ? 'border-primary bg-primary/10' : 'border-transparent hover:bg-background-tertiary'
+      } p-4 cursor-pointer border-l-4 transition-colors`}
     >
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <div className="flex items-center space-x-2">
-            <h4 className="font-medium text-gray-900 truncate text-sm">{title}</h4>
+            <h4 className="font-medium text-foreground truncate text-sm">{title}</h4>
             {left}
           </div>
           {subtitle && (
-            <p className="text-xs text-gray-600 mt-1 line-clamp-2">{subtitle}</p>
+            <p className="text-xs text-foreground-secondary mt-1 line-clamp-2">{subtitle}</p>
           )}
-          {meta && <div className="flex items-center mt-2 text-xs text-gray-500 space-x-3">{meta}</div>}
+          {meta && <div className="flex items-center mt-2 text-xs text-foreground-tertiary space-x-3">{meta}</div>}
         </div>
       </div>
     </div>
@@ -34,4 +34,3 @@ const SidebarListItem: React.FC<SidebarListItemProps> = ({ selected, onClick, ti
 };
 
 export default SidebarListItem;
-
