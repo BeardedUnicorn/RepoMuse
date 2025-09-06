@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { RepoAnalysis, IdeaRequest, ModelInfo, ProjectDirectory, ProjectSummary, SummaryRequest, ProjectInsights, GitLog } from '../types';
+import { RepoAnalysis, IdeaRequest, ModelInfo, ProjectDirectory, ProjectSummary, SummaryRequest, ProjectInsights, GitLog, TaskList } from '../types';
 
 export async function listProjectDirectories(rootPath: string): Promise<ProjectDirectory[]> {
   return await invoke('list_project_directories', { rootPath });
@@ -47,4 +47,13 @@ export async function getProjectInsights(projectPath: string): Promise<ProjectIn
 
 export async function getGitLog(projectPath: string): Promise<GitLog> {
   return await invoke('get_git_log', { projectPath });
+}
+
+// New task list functions
+export async function loadTaskList(projectPath: string): Promise<TaskList | null> {
+  return await invoke('load_task_list', { projectPath });
+}
+
+export async function saveTaskList(taskList: TaskList): Promise<void> {
+  return await invoke('save_task_list', { taskList });
 }

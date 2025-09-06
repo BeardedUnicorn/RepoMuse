@@ -29,6 +29,7 @@ export interface RepoAnalysis {
 export interface IdeaRequest {
   analysis: RepoAnalysis;
   settings: Settings;
+  focus_area?: string;
 }
 
 export interface ProjectDirectory {
@@ -120,4 +121,18 @@ export interface GitLog {
   total_commits: number;
   branches: string[];
   current_branch?: string;
+}
+
+export interface Task {
+  id: string;
+  text: string;
+  completed: boolean;
+  created_at: string;
+  completed_at?: string;
+}
+
+export interface TaskList {
+  project_path: string;
+  tasks: Task[];
+  updated_at: string;
 }

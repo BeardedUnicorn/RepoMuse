@@ -14,6 +14,22 @@ pub struct ThemePreference {
     pub last_updated: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Task {
+    pub id: String,
+    pub text: String,
+    pub completed: bool,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TaskList {
+    pub project_path: String,
+    pub tasks: Vec<Task>,
+    pub updated_at: String,
+}
+
 #[tauri::command]
 pub async fn save_theme_preference(theme: String) -> Result<(), String> {
     let dir = app_dir()?;
@@ -122,3 +138,36 @@ pub async fn load_root_folder() -> Result<Option<String>, String> {
     if std::path::Path::new(&s).exists() { Ok(Some(s)) } else { Ok(None) }
 }
 
+// New task list functions
+#[tauri::command]
+pub async fn save_task_list(task_list: TaskList) -> Result<(), String> {
+    let dir = app_dir()?.join("tasks");
+    if !dir.exists() { 
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?; 
+    }
+    
+    let filename = task_list
+        .project_path
+        .replace("/", "_")
+        .replace("\\", "_")
+        .replace(":", "");
+    let path = dir.join(format!("{}.json", filename));
+    
+    let json = serde_json::to_string_pretty(&task_list).map_err(|e| e.to_string())?;
+    fs::write(path, json).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn load_task_list(project_path: String) -> Result<Option<TaskList>, String> {
+    let dir = app_dir()?.join("tasks");
+    let filename = project_path.replace("/", "_").replace("\\", "_").replace(":", "");
+    let path = dir.join(format!("{}.json", filename));
+    
+    if !path.exists() { 
+        return Ok(None); 
+    }
+    
+    let s = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let task_list: TaskList = serde_json::from_str(&s).map_err(|e| e.to_string())?;
+    Ok(Some(task_list))
+}

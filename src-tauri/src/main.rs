@@ -27,6 +27,8 @@ fn main() {
             storage::load_project_summary,
             storage::save_root_folder,
             storage::load_root_folder,
+            storage::save_task_list,
+            storage::load_task_list,
             projects::update_project_file_count,
             projects::clear_file_count_cache,
             insights::get_project_insights,

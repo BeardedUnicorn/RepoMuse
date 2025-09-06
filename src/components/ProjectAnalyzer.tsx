@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ProjectDirectory, RepoAnalysis, Settings, ProjectSummary, ProjectInsights, GitLog } from '../types';
-import { analyzeRepository, analyzeRepositoryFresh, generateIdeaList, generateProjectSummary, saveProjectSummary, loadProjectSummary, getProjectInsights, getGitLog } from '../utils/api';
+import { ProjectDirectory, RepoAnalysis, Settings, ProjectSummary, ProjectInsights, GitLog, TaskList } from '../types';
+import { analyzeRepository, analyzeRepositoryFresh, generateIdeaList, generateProjectSummary, saveProjectSummary, loadProjectSummary, getProjectInsights, getGitLog, loadTaskList } from '../utils/api';
 import Spinner from './ui/Spinner';
 import Alert from './ui/Alert';
 import Card from './ui/Card';
@@ -9,10 +9,11 @@ import Badge from './ui/Badge';
 import StatTile from './ui/StatTile';
 import EmptyState from './ui/EmptyState';
 import Tabs from './ui/Tabs';
-import { FileText, Lightbulb, TrendingUp, GitBranch } from 'lucide-react';
+import { FileText, Lightbulb, TrendingUp, GitBranch, Plus, Focus } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import ProjectInsightsComponent from './ProjectInsights';
 import ProjectHeader from './ProjectHeader';
+import TaskListComponent, { createTaskFromIdea } from './TaskList';
 import { useToast } from './ui/ToastProvider';
 
 interface ProjectAnalyzerProps {
@@ -26,6 +27,7 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
   const [summary, setSummary] = useState<ProjectSummary | null>(null);
   const [insights, setInsights] = useState<ProjectInsights | null>(null);
   const [gitLog, setGitLog] = useState<GitLog | null>(null);
+  const [taskList, setTaskList] = useState<TaskList | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGeneratingIdeas, setIsGeneratingIdeas] = useState(false);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
@@ -36,6 +38,9 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
   const [summaryError, setSummaryError] = useState<string>('');
   const [insightsError, setInsightsError] = useState<string>('');
   const [gitLogError, setGitLogError] = useState<string>('');
+  const [focusArea, setFocusArea] = useState<string>('');
+  const [generatedWithFocus, setGeneratedWithFocus] = useState<string>('');
+  const [taskUpdateTrigger, setTaskUpdateTrigger] = useState(0);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -45,14 +50,18 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
       setSummary(null);
       setInsights(null);
       setGitLog(null);
+      setTaskList(null);
       setAnalysisError('');
       setIdeasError('');
       setSummaryError('');
       setInsightsError('');
       setGitLogError('');
+      setFocusArea('');
+      setGeneratedWithFocus('');
       analyzeProject();
       loadSummary();
       loadInsights();
+      loadTasks();
       if (selectedProject.is_git_repo) {
         loadGitLog();
       }
@@ -106,8 +115,11 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
       const generatedIdeas = await generateIdeaList({
         analysis,
         settings,
+        focus_area: focusArea || undefined,
       });
       setIdeas(generatedIdeas);
+      // Store the focus area that was used during generation
+      setGeneratedWithFocus(focusArea);
       toast({ title: 'Ideas generated', description: `${generatedIdeas.length} ideas created`, variant: 'success' });
     } catch (err) {
       setIdeasError(err as string);
@@ -162,6 +174,17 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
     }
   };
 
+  const loadTasks = async () => {
+    if (!selectedProject) return;
+    
+    try {
+      const tasks = await loadTaskList(selectedProject.path);
+      setTaskList(tasks);
+    } catch (err) {
+      console.error('Error loading tasks:', err);
+    }
+  };
+
   const generateSummary = async () => {
     if (!analysis || !settings.api_url || !settings.model || !selectedProject) {
       setSummaryError('Please configure API settings first');
@@ -182,6 +205,30 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
       toast({ title: 'Failed to generate summary', description: String(err), variant: 'error' });
     } finally {
       setIsGeneratingSummary(false);
+    }
+  };
+
+  const addIdeaToTasks = async (idea: string) => {
+    if (!selectedProject) return;
+    
+    try {
+      const result = await createTaskFromIdea(selectedProject.path, idea);
+      
+      if (result.success) {
+        toast({ title: 'Task added', description: 'Idea has been added to your task list', variant: 'success' });
+        // Trigger task list refresh
+        setTaskUpdateTrigger(prev => prev + 1);
+        // Reload tasks to update the badge count
+        loadTasks();
+      } else if (result.isDuplicate) {
+        toast({ 
+          title: 'Task already exists', 
+          description: 'This idea has already been added to your task list', 
+          variant: 'info' 
+        });
+      }
+    } catch (error) {
+      toast({ title: 'Failed to add task', description: String(error), variant: 'error' });
     }
   };
 
@@ -273,13 +320,41 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
       label: 'Development Ideas',
       content: (
         <div>
-          <div className="flex justify-between items-center mb-6">
-            <div />
-            {!isGeneratingIdeas && (
-              <Button onClick={generateIdeas}>
-                {ideas.length > 0 ? 'Regenerate Ideas' : 'Generate Ideas'}
-              </Button>
-            )}
+          <div className="mb-6 space-y-4">
+            {/* Focus area input */}
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <div className="relative">
+                  <Focus className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-foreground-tertiary" />
+                  <input
+                    type="text"
+                    value={focusArea}
+                    onChange={(e) => setFocusArea(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && !isGeneratingIdeas) {
+                        e.preventDefault();
+                        generateIdeas();
+                      }
+                    }}
+                    placeholder="Focus area (e.g., documentation, performance, testing, security)..."
+                    className="w-full pl-10 pr-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-background-secondary text-foreground placeholder-foreground-tertiary"
+                  />
+                </div>
+                <p className="mt-1 text-xs text-foreground-secondary">
+                  Optional: Enter a specific area to focus the generated ideas on (press Enter to generate)
+                </p>
+              </div>
+            </div>
+
+            {/* Generate button */}
+            <div className="flex justify-between items-center">
+              <div />
+              {!isGeneratingIdeas && (
+                <Button onClick={generateIdeas}>
+                  {ideas.length > 0 ? 'Regenerate Ideas' : 'Generate Ideas'}
+                </Button>
+              )}
+            </div>
           </div>
 
           {isGeneratingIdeas && (
@@ -309,10 +384,17 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
 
           {ideas.length > 0 && (
             <div className="space-y-4">
+              {generatedWithFocus && (
+                <div className="mb-4 p-3 bg-info/10 dark:bg-info/20 rounded-md">
+                  <p className="text-sm text-info">
+                    <strong>Focus:</strong> Ideas generated with emphasis on "{generatedWithFocus}"
+                  </p>
+                </div>
+              )}
               {ideas.map((idea, index) => (
                 <div
                   key={index}
-                  className="border-l-4 border-success bg-success/10 dark:bg-success/20 p-4 rounded-r-md"
+                  className="border-l-4 border-success bg-success/10 dark:bg-success/20 p-4 rounded-r-md group"
                 >
                   <div className="flex items-start">
                     <div className="flex-shrink-0">
@@ -320,9 +402,16 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
                         {index + 1}
                       </span>
                     </div>
-                    <div className="ml-3">
+                    <div className="ml-3 flex-1">
                       <p className="text-foreground whitespace-pre-line">{idea}</p>
                     </div>
+                    <button
+                      onClick={() => addIdeaToTasks(idea)}
+                      className="ml-3 opacity-0 group-hover:opacity-100 transition-opacity p-2 hover:bg-background-tertiary rounded-md text-foreground-secondary hover:text-primary"
+                      title="Add to task list"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
               ))}
@@ -331,6 +420,19 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
         </div>
       ),
       badge: ideas.length > 0 ? <Badge variant="green" className="ml-2">{ideas.length}</Badge> : undefined
+    },
+    {
+      id: 'tasks',
+      label: 'Task List',
+      content: (
+        <TaskListComponent 
+          key={taskUpdateTrigger} 
+          projectPath={selectedProject.path} 
+        />
+      ),
+      badge: taskList && taskList.tasks.filter(t => !t.completed).length > 0 
+        ? <Badge variant="blue" className="ml-2">{taskList.tasks.filter(t => !t.completed).length}</Badge> 
+        : undefined
     },
     {
       id: 'insights',
