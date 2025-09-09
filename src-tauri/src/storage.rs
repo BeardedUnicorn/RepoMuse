@@ -47,6 +47,144 @@ pub struct ProjectSummary {
     pub key_features: Vec<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DatabaseStats {
+    pub total_projects: i64,
+    pub total_files: i64,
+    pub total_size_bytes: i64,
+    pub cached_analyses: i64,
+    pub total_tasks: i64,
+    pub total_summaries: i64,
+    pub database_size_bytes: i64,
+    pub database_size_mb: f64,
+}
+
+#[tauri::command]
+pub async fn get_app_data_directory() -> Result<String, String> {
+    dirs::data_local_dir()
+        .ok_or("Failed to get app data directory".to_string())
+        .map(|d| d.join("repomuse").to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn get_database_stats(
+    db_pool: State<'_, Arc<DbPool>>,
+) -> Result<DatabaseStats, String> {
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    
+    // Get project statistics
+    let (total_projects, total_files, total_size_bytes) = conn.query_row(
+        "SELECT COUNT(*) as project_count,
+                COALESCE(SUM(file_count), 0) as total_files,
+                COALESCE(SUM(total_size_bytes), 0) as total_size
+         FROM projects",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).map_err(|e| e.to_string())?;
+    
+    // Get cached analyses count
+    let cached_analyses: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM analysis_cache WHERE expires_at > CURRENT_TIMESTAMP",
+        [],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+    
+    // Get total tasks
+    let total_tasks: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM tasks",
+        [],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+    
+    // Get total summaries
+    let total_summaries: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM summaries",
+        [],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+    
+    // Get database file size
+    let database_size_bytes: i64 = conn.query_row(
+        "SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()",
+        [],
+        |row| row.get(0),
+    ).unwrap_or(0);
+    
+    let database_size_mb = database_size_bytes as f64 / (1024.0 * 1024.0);
+    
+    Ok(DatabaseStats {
+        total_projects,
+        total_files,
+        total_size_bytes,
+        cached_analyses,
+        total_tasks,
+        total_summaries,
+        database_size_bytes,
+        database_size_mb,
+    })
+}
+
+#[tauri::command]
+pub async fn vacuum_database(
+    db_pool: State<'_, Arc<DbPool>>,
+) -> Result<String, String> {
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    
+    // Get size before vacuum
+    let size_before: i64 = conn.query_row(
+        "SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()",
+        [],
+        |row| row.get(0),
+    ).unwrap_or(0);
+    
+    // Run VACUUM
+    conn.execute("VACUUM", []).map_err(|e| e.to_string())?;
+    
+    // Get size after vacuum
+    let size_after: i64 = conn.query_row(
+        "SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()",
+        [],
+        |row| row.get(0),
+    ).unwrap_or(0);
+    
+    let reclaimed = size_before - size_after;
+    let reclaimed_mb = reclaimed as f64 / (1024.0 * 1024.0);
+    
+    Ok(format!("Vacuum complete. Reclaimed {:.2} MB", reclaimed_mb))
+}
+
+#[tauri::command]
+pub async fn clear_expired_cache(
+    db_pool: State<'_, Arc<DbPool>>,
+) -> Result<String, String> {
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    
+    let deleted = conn.execute(
+        "DELETE FROM analysis_cache WHERE expires_at < CURRENT_TIMESTAMP",
+        [],
+    ).map_err(|e| e.to_string())?;
+    
+    Ok(format!("Cleared {} expired cache entries", deleted))
+}
+
+#[tauri::command]
+pub async fn optimize_database(
+    db_pool: State<'_, Arc<DbPool>>,
+) -> Result<String, String> {
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    
+    // Run ANALYZE to update statistics
+    conn.execute("ANALYZE", []).map_err(|e| e.to_string())?;
+    
+    // Clear expired cache
+    let deleted: usize = conn.execute(
+        "DELETE FROM analysis_cache WHERE expires_at < CURRENT_TIMESTAMP",
+        [],
+    ).map_err(|e| e.to_string())?;
+    
+    Ok(format!("Optimization complete. Cleared {} expired cache entries", deleted))
+}
+
 #[tauri::command]
 pub async fn save_theme_preference(
     db_pool: State<'_, Arc<DbPool>>,

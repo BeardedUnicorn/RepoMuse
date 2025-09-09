@@ -73,7 +73,12 @@ fn main() {
             projects::update_project_file_count,
             insights::get_project_insights,
             insights::get_git_log,
-            storage::clear_all_data
+            storage::clear_all_data,
+            storage::get_app_data_directory,
+            storage::get_database_stats,
+            storage::vacuum_database,
+            storage::clear_expired_cache,
+            storage::optimize_database
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
