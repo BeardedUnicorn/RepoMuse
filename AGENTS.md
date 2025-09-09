@@ -26,6 +26,14 @@
 - Rust: add unit tests with `#[cfg(test)]` in modules; run with `cargo test` inside `src-tauri/`.
 - Target coverage: ~80% lines/branches for new/changed code.
 
+## Agent Workflow & Auto‑Commit Policy
+- Always create a new git commit immediately after making any changes to the codebase.
+- Use Conventional Commits for messages (e.g., `feat: ...`, `fix: ...`, `docs: ...`, `refactor: ...`, `chore: ...`).
+- Keep commits atomic and scoped to the files/changes just made. Do not amend or squash by default.
+- Only stage the files you modified for that change; avoid blanket adds that include unrelated work.
+- When a task spans multiple logical changes, prefer separate focused commits.
+- For documentation-only updates, use `docs:`; for config/infra, use `chore:`.
+
 ## Commit & Pull Request Guidelines
 - Commits: use Conventional Commits where possible (e.g., `feat: add idea generator panel`). Keep changes atomic.
 - PRs: include a clear description, linked issues, and screenshots/GIFs for UI changes.
