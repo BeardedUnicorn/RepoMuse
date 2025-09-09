@@ -1,3 +1,255 @@
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
+
+use chrono::Utc;
+use once_cell::sync::Lazy;
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
+use tauri::{Emitter, State};
+
+use crate::db::{self, DbPool};
+use crate::fs_utils::{get_language_from_extension, read_text_prefix_limited, should_analyze_file, walker};
+
+// Analysis data structures
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileInfo {
+  pub path: String,
+  pub content: String,
+  pub language: String,
+  pub size: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileSizeInfo {
+  pub path: String,
+  pub size_bytes: u64,
+  pub size_kb: u64,
+  pub language: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SizeMetrics {
+  pub total_size_bytes: u64,
+  pub total_size_kb: u64,
+  pub total_size_mb: u64,
+  pub analyzed_size_bytes: u64,
+  pub analyzed_size_kb: u64,
+  pub analyzed_size_mb: u64,
+  pub largest_files: Vec<FileSizeInfo>,
+  pub size_by_language: HashMap<String, u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanProgress {
+  pub files_scanned: usize,
+  pub scan_limit: usize,
+  pub is_complete: bool,
+  pub estimated_total_files: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoAnalysis {
+  pub files: Vec<FileInfo>,
+  pub structure: HashMap<String, Vec<String>>,
+  pub technologies: Vec<String>,
+  pub metrics: HashMap<String, i32>,
+  pub size_metrics: SizeMetrics,
+  pub generated_at: Option<String>,
+  pub from_cache: Option<bool>,
+  pub is_lazy_scan: Option<bool>,
+  pub scan_progress: Option<ScanProgress>,
+}
+
+// Internal structures for processing
+struct FileMetadata {
+  pub path: String,
+  pub size: u64,
+  pub language: String,
+  pub parent: Option<String>,
+}
+
+struct FileProcessResult {
+  pub file_info: Option<FileInfo>,
+  pub lines: usize,
+  pub language: String,
+  pub parent: Option<String>,
+  pub path: String,
+  pub size: u64,
+  pub is_analyzed: bool,
+}
+
+#[derive(Clone)]
+struct LazyLoadConfig {
+  initial_scan_limit: usize,   // how many files to scan in lazy mode
+  sample_content_limit: usize, // how many file contents to sample in lazy mode
+  max_file_size: u64,          // maximum size to read content
+  batch_size: usize,           // not currently used in this file
+}
+
+impl Default for LazyLoadConfig {
+  fn default() -> Self {
+    Self {
+      initial_scan_limit: 100,
+      sample_content_limit: 25,
+      max_file_size: 100_000,
+      batch_size: 10,
+    }
+  }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ProgressUpdate {
+  folder_path: String,
+  phase: String,
+  files_discovered: usize,
+  files_processed: usize,
+  total_files: usize,
+  percentage: f64,
+  current_file: Option<String>,
+  is_complete: bool,
+  is_favorite: bool,
+  elapsed_ms: u64,
+  estimated_remaining_ms: Option<u64>,
+  bytes_processed: u64,
+  total_bytes: Option<u64>,
+  skipped_filtered: Option<usize>,
+  dirs_seen: Option<usize>,
+}
+
+struct ProgressTracker {
+  start: Instant,
+  phase: Mutex<String>,
+  current_file: Mutex<Option<String>>,
+  files_discovered: AtomicUsize,
+  files_processed: AtomicUsize,
+  total_files: AtomicUsize,
+  skipped_filtered: AtomicUsize,
+  dirs_seen: AtomicUsize,
+  bytes_processed: AtomicU64,
+  total_bytes: AtomicU64,
+  complete: AtomicBool,
+}
+
+impl ProgressTracker {
+  fn new() -> Self {
+    Self {
+      start: Instant::now(),
+      phase: Mutex::new("init".to_string()),
+      current_file: Mutex::new(None),
+      files_discovered: AtomicUsize::new(0),
+      files_processed: AtomicUsize::new(0),
+      total_files: AtomicUsize::new(0),
+      skipped_filtered: AtomicUsize::new(0),
+      dirs_seen: AtomicUsize::new(0),
+      bytes_processed: AtomicU64::new(0),
+      total_bytes: AtomicU64::new(0),
+      complete: AtomicBool::new(false),
+    }
+  }
+
+  fn set_phase(&self, phase: &str) {
+    if let Ok(mut p) = self.phase.lock() { *p = phase.to_string(); }
+  }
+  fn set_current_file(&self, file: Option<String>) {
+    if let Ok(mut cf) = self.current_file.lock() { *cf = file; }
+  }
+  fn increment_discovered(&self) {
+    self.files_discovered.fetch_add(1, Ordering::Relaxed);
+  }
+  fn increment_processed(&self, bytes: usize) {
+    self.files_processed.fetch_add(1, Ordering::Relaxed);
+    self.bytes_processed.fetch_add(bytes as u64, Ordering::Relaxed);
+  }
+  fn increment_skipped_filtered(&self) {
+    self.skipped_filtered.fetch_add(1, Ordering::Relaxed);
+  }
+  fn increment_dirs_seen(&self) {
+    self.dirs_seen.fetch_add(1, Ordering::Relaxed);
+  }
+  fn set_total_files(&self, total: usize) { self.total_files.store(total, Ordering::Relaxed); }
+  fn set_total_bytes(&self, total: usize) { self.total_bytes.store(total as u64, Ordering::Relaxed); }
+  fn mark_complete(&self) { self.complete.store(true, Ordering::Relaxed); }
+
+  fn get_progress(&self, folder_path: &str, is_favorite: bool) -> ProgressUpdate {
+    let elapsed = self.start.elapsed();
+    let elapsed_ms = (elapsed.as_secs() * 1000) + (elapsed.subsec_millis() as u64);
+    let total = self.total_files.load(Ordering::Relaxed);
+    let processed = self.files_processed.load(Ordering::Relaxed);
+    let percentage = if total > 0 { (processed as f64 / total as f64) * 100.0 } else { 0.0 };
+    let phase = self
+      .phase
+      .lock()
+      .ok()
+      .map(|p| p.clone())
+      .unwrap_or_else(|| "unknown".to_string());
+    let current_file = self
+      .current_file
+      .lock()
+      .ok()
+      .and_then(|p| p.clone());
+    let bytes_processed = self.bytes_processed.load(Ordering::Relaxed);
+    let total_bytes = self.total_bytes.load(Ordering::Relaxed);
+
+    ProgressUpdate {
+      folder_path: folder_path.to_string(),
+      phase,
+      files_discovered: self.files_discovered.load(Ordering::Relaxed),
+      files_processed: processed,
+      total_files: total,
+      percentage,
+      current_file,
+      is_complete: self.complete.load(Ordering::Relaxed),
+      is_favorite,
+      elapsed_ms,
+      estimated_remaining_ms: None,
+      bytes_processed,
+      total_bytes: Some(total_bytes),
+      skipped_filtered: Some(self.skipped_filtered.load(Ordering::Relaxed)),
+      dirs_seen: Some(self.dirs_seen.load(Ordering::Relaxed)),
+    }
+  }
+}
+
+// Simple byte conversion helpers
+fn bytes_to_kb(bytes: u64) -> u64 { bytes / 1024 }
+fn bytes_to_mb(bytes: u64) -> u64 { bytes / (1024 * 1024) }
+
+// Global cancel flags per path
+static CANCEL_FLAGS: Lazy<Mutex<HashMap<String, Arc<AtomicBool>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn set_cancel_flag(path: &str, flag: Arc<AtomicBool>) {
+  if let Ok(mut map) = CANCEL_FLAGS.lock() {
+    map.insert(path.to_string(), flag);
+  }
+}
+
+fn take_cancel_flag(path: &str) -> Option<Arc<AtomicBool>> {
+  if let Ok(mut map) = CANCEL_FLAGS.lock() { map.remove(path) } else { None }
+}
+
+async fn is_favorite_project(db_pool: &Arc<DbPool>, folder_path: &str) -> bool {
+  if let Ok(conn) = db_pool.get() {
+    if let Ok(Some(project)) = db::get_project_by_path(&conn, folder_path) {
+      return project.is_favorite;
+    }
+  }
+  false
+}
+
+#[tauri::command]
+pub async fn cancel_analysis(folder_path: String) -> Result<(), String> {
+  // Set cancel flag if exists; do not remove it here to allow in-flight checks
+  if let Ok(map) = CANCEL_FLAGS.lock() {
+    if let Some(flag) = map.get(&folder_path) {
+      flag.store(true, Ordering::Relaxed);
+    }
+  }
+  Ok(())
+}
+
 // Process files in parallel batches
 async fn process_files_parallel(
   files: &[FileMetadata],

@@ -419,6 +419,8 @@ pub fn save_task_list(
         ])?;
     }
     
+    // Ensure statement is dropped before committing the transaction
+    drop(stmt);
     tx.commit()?;
     Ok(())
 }
