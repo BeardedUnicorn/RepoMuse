@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::sync::Arc;
+use tauri::State;
+use crate::db::{self, DbPool};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
@@ -36,63 +38,6 @@ pub struct FavoriteProjects {
     pub last_updated: String,
 }
 
-#[tauri::command]
-pub async fn save_theme_preference(theme: String) -> Result<(), String> {
-    let dir = app_dir()?;
-    if !dir.exists() { 
-        fs::create_dir_all(&dir).map_err(|e| e.to_string())?; 
-    }
-    let path = dir.join("theme.json");
-    let preference = ThemePreference {
-        theme,
-        last_updated: chrono::Utc::now().to_rfc3339(),
-    };
-    let json = serde_json::to_string_pretty(&preference).map_err(|e| e.to_string())?;
-    fs::write(path, json).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn load_theme_preference() -> Result<Option<String>, String> {
-    let dir = app_dir()?;
-    let path = dir.join("theme.json");
-    if !path.exists() { 
-        return Ok(None); 
-    }
-    let s = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let preference: ThemePreference = serde_json::from_str(&s).map_err(|e| e.to_string())?;
-    Ok(Some(preference.theme))
-}
-
-fn app_dir() -> Result<std::path::PathBuf, String> {
-    dirs::data_local_dir()
-        .ok_or("Failed to get app data directory".to_string())
-        .map(|d| d.join("repomuse"))
-}
-
-#[tauri::command]
-pub async fn save_settings(settings: Settings) -> Result<(), String> {
-    let dir = app_dir()?;
-    if !dir.exists() { fs::create_dir_all(&dir).map_err(|e| e.to_string())?; }
-    let path = dir.join("settings.json");
-    let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-    fs::write(path, json).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn load_settings() -> Result<Settings, String> {
-    let dir = app_dir()?;
-    let path = dir.join("settings.json");
-    if !path.exists() {
-        return Ok(Settings {
-            api_url: "http://localhost:11434/v1/chat/completions".to_string(),
-            model: "llama2".to_string(),
-            api_key: "".to_string(),
-        });
-    }
-    let s = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&s).map_err(|e| e.to_string())
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProjectSummary {
     pub project_path: String,
@@ -103,132 +48,191 @@ pub struct ProjectSummary {
 }
 
 #[tauri::command]
-pub async fn save_project_summary(summary: ProjectSummary) -> Result<(), String> {
-    let dir = app_dir()?.join("summaries");
-    if !dir.exists() { fs::create_dir_all(&dir).map_err(|e| e.to_string())?; }
-    let filename = summary
-        .project_path
-        .replace("/", "_")
-        .replace("\\", "_")
-        .replace(":", "");
-    let path = dir.join(format!("{}.json", filename));
-    let json = serde_json::to_string_pretty(&summary).map_err(|e| e.to_string())?;
-    fs::write(path, json).map_err(|e| e.to_string())
+pub async fn save_theme_preference(
+    db_pool: State<'_, Arc<DbPool>>,
+    theme: String,
+) -> Result<(), String> {
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    db::save_setting(&conn, "theme_preference", &theme)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn load_project_summary(project_path: String) -> Result<Option<ProjectSummary>, String> {
-    let dir = app_dir()?.join("summaries");
-    let filename = project_path.replace("/", "_").replace("\\", "_").replace(":", "");
-    let path = dir.join(format!("{}.json", filename));
-    if !path.exists() { return Ok(None); }
-    let s = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let summary: ProjectSummary = serde_json::from_str(&s).map_err(|e| e.to_string())?;
-    Ok(Some(summary))
+pub async fn load_theme_preference(
+    db_pool: State<'_, Arc<DbPool>>,
+) -> Result<Option<String>, String> {
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    db::load_setting(&conn, "theme_preference")
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn save_root_folder(root_folder: String) -> Result<(), String> {
-    let dir = app_dir()?;
-    if !dir.exists() { fs::create_dir_all(&dir).map_err(|e| e.to_string())?; }
-    let path = dir.join("root_folder.txt");
-    fs::write(path, root_folder).map_err(|e| e.to_string())
+pub async fn save_settings(
+    db_pool: State<'_, Arc<DbPool>>,
+    settings: Settings,
+) -> Result<(), String> {
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    let json = serde_json::to_string(&settings).map_err(|e| e.to_string())?;
+    db::save_setting(&conn, "api_settings", &json)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn load_root_folder() -> Result<Option<String>, String> {
-    let dir = app_dir()?;
-    let path = dir.join("root_folder.txt");
-    if !path.exists() { return Ok(None); }
-    let s = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    if std::path::Path::new(&s).exists() { Ok(Some(s)) } else { Ok(None) }
+pub async fn load_settings(
+    db_pool: State<'_, Arc<DbPool>>,
+) -> Result<Settings, String> {
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    
+    if let Some(json) = db::load_setting(&conn, "api_settings").map_err(|e| e.to_string())? {
+        serde_json::from_str(&json).map_err(|e| e.to_string())
+    } else {
+        Ok(Settings {
+            api_url: "http://localhost:11434/v1/chat/completions".to_string(),
+            model: "llama2".to_string(),
+            api_key: "".to_string(),
+        })
+    }
 }
 
-// Task list functions
 #[tauri::command]
-pub async fn save_task_list(task_list: TaskList) -> Result<(), String> {
-    let dir = app_dir()?.join("tasks");
-    if !dir.exists() { 
-        fs::create_dir_all(&dir).map_err(|e| e.to_string())?; 
+pub async fn save_project_summary(
+    db_pool: State<'_, Arc<DbPool>>,
+    summary: ProjectSummary,
+) -> Result<(), String> {
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    
+    // Get or create project
+    let project_path = summary.project_path.clone();
+    let project = db::get_project_by_path(&conn, &project_path)
+        .map_err(|e| e.to_string())?
+        .ok_or("Project not found")?;
+    
+    db::save_summary(&conn, project.id, &summary)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn load_project_summary(
+    db_pool: State<'_, Arc<DbPool>>,
+    project_path: String,
+) -> Result<Option<ProjectSummary>, String> {
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    
+    if let Some(project) = db::get_project_by_path(&conn, &project_path).map_err(|e| e.to_string())? {
+        db::load_summary(&conn, project.id, &project_path)
+            .map_err(|e| e.to_string())
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+pub async fn save_root_folder(
+    db_pool: State<'_, Arc<DbPool>>,
+    root_folder: String,
+) -> Result<(), String> {
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    db::save_setting(&conn, "root_folder", &root_folder)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn load_root_folder(
+    db_pool: State<'_, Arc<DbPool>>,
+) -> Result<Option<String>, String> {
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    let root_folder = db::load_setting(&conn, "root_folder")
+        .map_err(|e| e.to_string())?;
+    
+    // Verify the folder still exists
+    if let Some(ref path) = root_folder {
+        if std::path::Path::new(path).exists() {
+            Ok(Some(path.clone()))
+        } else {
+            Ok(None)
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+pub async fn save_task_list(
+    db_pool: State<'_, Arc<DbPool>>,
+    task_list: TaskList,
+) -> Result<(), String> {
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    
+    // Get or create project
+    let project = db::get_project_by_path(&conn, &task_list.project_path)
+        .map_err(|e| e.to_string())?
+        .ok_or("Project not found")?;
+    
+    db::save_task_list(&conn, project.id, &task_list.tasks)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn load_task_list(
+    db_pool: State<'_, Arc<DbPool>>,
+    project_path: String,
+) -> Result<Option<TaskList>, String> {
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    
+    if let Some(project) = db::get_project_by_path(&conn, &project_path).map_err(|e| e.to_string())? {
+        db::load_task_list(&conn, project.id, &project_path)
+            .map_err(|e| e.to_string())
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+pub async fn save_favorite_projects(
+    db_pool: State<'_, Arc<DbPool>>,
+    favorites: Vec<String>,
+) -> Result<(), String> {
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    
+    // First, unfavorite all projects
+    conn.execute("UPDATE projects SET is_favorite = FALSE", [])
+        .map_err(|e| e.to_string())?;
+    
+    // Then favorite the specified ones
+    for path in favorites {
+        db::toggle_favorite(&conn, &path, true)
+            .map_err(|e| e.to_string())?;
     }
     
-    let filename = task_list
-        .project_path
-        .replace("/", "_")
-        .replace("\\", "_")
-        .replace(":", "");
-    let path = dir.join(format!("{}.json", filename));
-    
-    let json = serde_json::to_string_pretty(&task_list).map_err(|e| e.to_string())?;
-    fs::write(path, json).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn load_task_list(project_path: String) -> Result<Option<TaskList>, String> {
-    let dir = app_dir()?.join("tasks");
-    let filename = project_path.replace("/", "_").replace("\\", "_").replace(":", "");
-    let path = dir.join(format!("{}.json", filename));
-    
-    if !path.exists() { 
-        return Ok(None); 
-    }
-    
-    let s = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let task_list: TaskList = serde_json::from_str(&s).map_err(|e| e.to_string())?;
-    Ok(Some(task_list))
-}
-
-// Favorite projects functions
-#[tauri::command]
-pub async fn save_favorite_projects(favorites: Vec<String>) -> Result<(), String> {
-    println!("[Rust] Attempting to save favorites: {:?}", favorites);
-    
-    let dir = app_dir()?;
-    println!("[Rust] App directory: {:?}", dir);
-    
-    if !dir.exists() { 
-        println!("[Rust] Creating app directory...");
-        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create directory: {}", e))?; 
-    }
-    
-    let path = dir.join("favorites.json");
-    println!("[Rust] Full path for favorites: {:?}", path);
-    
-    let favorite_data = FavoriteProjects {
-        favorites,
-        last_updated: chrono::Utc::now().to_rfc3339(),
-    };
-    
-    let json = serde_json::to_string_pretty(&favorite_data)
-        .map_err(|e| format!("Failed to serialize favorites: {}", e))?;
-    
-    fs::write(&path, &json)
-        .map_err(|e| format!("Failed to write favorites file at {:?}: {}", path, e))?;
-    
-    println!("[Rust] Favorites saved successfully to {:?}", path);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn load_favorite_projects() -> Result<Vec<String>, String> {
-    println!("[Rust] Attempting to load favorites...");
+pub async fn load_favorite_projects(
+    db_pool: State<'_, Arc<DbPool>>,
+) -> Result<Vec<String>, String> {
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    db::get_favorites(&conn)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn clear_all_data(
+    db_pool: State<'_, Arc<DbPool>>,
+) -> Result<(), String> {
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
     
-    let dir = app_dir()?;
-    let path = dir.join("favorites.json");
+    // Clear all data but keep schema
+    conn.execute("DELETE FROM tasks", []).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM summaries", []).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM analysis_cache", []).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM files", []).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM git_info", []).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM projects", []).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM settings", []).map_err(|e| e.to_string())?;
     
-    println!("[Rust] Looking for favorites at: {:?}", path);
+    // Run vacuum to reclaim space
+    conn.execute("VACUUM", []).map_err(|e| e.to_string())?;
     
-    if !path.exists() { 
-        println!("[Rust] No favorites file found, returning empty list");
-        return Ok(Vec::new()); 
-    }
-    
-    let s = fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read favorites file: {}", e))?;
-    
-    let favorite_data: FavoriteProjects = serde_json::from_str(&s)
-        .map_err(|e| format!("Failed to parse favorites JSON: {}", e))?;
-    
-    println!("[Rust] Loaded {} favorites", favorite_data.favorites.len());
-    Ok(favorite_data.favorites)
+    Ok(())
 }

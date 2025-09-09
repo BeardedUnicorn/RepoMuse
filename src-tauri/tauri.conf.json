@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "repomuse",
+  "productName": "RepoMuse",
   "version": "0.1.0",
   "identifier": "com.mike.repomuse",
   "build": {
@@ -12,7 +12,8 @@
   "app": {
     "windows": [
       {
-        "title": "repomuse",
+        "label": "main",
+        "title": "RepoMuse",
         "width": 800,
         "height": 600
       }

@@ -1,16 +1,12 @@
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::time::{Duration, SystemTime};
-// use ignore::WalkBuilder; // now using helper walkers in fs_utils
+use std::sync::Arc;
+use tauri::State;
 
-use crate::cache::{
-    clear_file_count_cache_file, load_file_count_cache, load_project_meta_cache, save_file_count_cache,
-    save_project_meta_cache, FileCountCache, ProjectMetaCacheEntry, GlobalFileCountCache,
-};
-use crate::fs_utils::{get_dir_modified_time, should_analyze_file, walker, walker_with_depth, walker_parallel};
+use crate::fs_utils::{should_analyze_file, walker, walker_parallel};
+use crate::db::{self, DbPool};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProjectDirectory {
@@ -76,44 +72,6 @@ fn get_project_description(path: &Path) -> Option<String> {
     None
 }
 
-fn estimate_deep_files(path: &Path) -> usize {
-    let mut count = 0;
-    let mut checked = 0;
-    const MAX_CHECK: usize = 50;
-    for result in walker(path).take(MAX_CHECK) {
-        let entry = match result { Ok(e) => e, Err(_) => continue };
-        checked += 1;
-        if entry.file_type().map_or(false, |ft| ft.is_file()) {
-            let path_str = entry.path().to_string_lossy();
-            if should_analyze_file(&path_str) {
-                count += 1;
-            }
-        }
-    }
-    if checked >= MAX_CHECK { count * 2 } else { count }
-}
-
-fn estimate_file_count(path: &Path) -> usize {
-    let mut count = 0;
-    let mut depth = 0;
-    const MAX_DEPTH: usize = 3;
-    const SAMPLE_FACTOR: usize = 10;
-    for result in walker_with_depth(path, Some(MAX_DEPTH)) {
-        let entry = match result { Ok(e) => e, Err(_) => continue };
-        if entry.file_type().map_or(false, |ft| ft.is_file()) {
-            let path_str = entry.path().to_string_lossy();
-            if should_analyze_file(&path_str) { count += 1; }
-        }
-        if entry.file_type().map_or(false, |ft| ft.is_dir()) && entry.depth() == MAX_DEPTH {
-            depth += 1;
-            if depth % SAMPLE_FACTOR == 0 {
-                count += estimate_deep_files(entry.path()) * SAMPLE_FACTOR;
-            }
-        }
-    }
-    count
-}
-
 fn count_project_files(path: &Path) -> usize {
     use std::sync::atomic::{AtomicUsize, Ordering};
     let counter = AtomicUsize::new(0);
@@ -134,11 +92,10 @@ fn count_project_files(path: &Path) -> usize {
     counter.load(Ordering::Relaxed)
 }
 
-fn process_project_directory_fast(
+fn process_project_directory(
     path: std::path::PathBuf,
-    count_cache: &GlobalFileCountCache,
-    meta_cache: &HashMap<String, ProjectMetaCacheEntry>,
-) -> Option<(ProjectDirectory, Option<ProjectMetaCacheEntry>)> {
+    conn: &rusqlite::Connection,
+) -> Option<ProjectDirectory> {
     let dir_name = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -153,71 +110,59 @@ fn process_project_directory_fast(
 
     if is_project_directory(&path) {
         let path_str = path.to_string_lossy().to_string();
-        let dir_modified = get_dir_modified_time(&path);
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or(Duration::from_secs(0))
-            .as_secs();
-        const META_TTL: u64 = 3600;
-
-        let mut is_git_repo = path.join(".git").exists();
-        let mut description: Option<String> = None;
-        let mut meta_update: Option<ProjectMetaCacheEntry> = None;
-
-        if let Some(meta) = meta_cache.get(&path_str) {
-            if meta.last_modified >= dir_modified && (now - meta.cached_at) < META_TTL {
-                is_git_repo = meta.is_git_repo;
-                description = meta.description.clone();
-            }
-        }
-        if description.is_none() {
-            let desc = get_project_description(&path);
-            description = desc.clone();
-            meta_update = Some(ProjectMetaCacheEntry {
-                path: path_str.clone(),
-                description: desc,
-                is_git_repo,
-                last_modified: dir_modified,
-                cached_at: now,
-            });
-        }
-
-        // Get cached file count if available
-        let (file_count, is_counting) = if let Some(cached) = count_cache.projects.get(&path_str) {
-            if cached.last_modified >= dir_modified && (now - cached.cached_at) < 86400 {
-                (cached.count, false)
-            } else {
-                (estimate_file_count(&path), true)
-            }
+        let is_git_repo = path.join(".git").exists();
+        let description = get_project_description(&path);
+        
+        // Get or create project in database
+        let project = db::get_project_by_path(conn, &path_str).ok().flatten();
+        
+        let file_count = if let Some(p) = &project {
+            p.file_count as usize
         } else {
-            (estimate_file_count(&path), true)
+            // First time seeing this project - do a quick count
+            let count = count_project_files(&path);
+            
+            // Store in database
+            let _ = db::upsert_project(
+                conn,
+                &path_str,
+                &dir_name,
+                description.as_deref(),
+                is_git_repo,
+            );
+            
+            if let Ok(Some(proj)) = db::get_project_by_path(conn, &path_str) {
+                let _ = db::update_project_file_count(conn, proj.id, count as i64);
+            }
+            
+            count
         };
 
-        let project = ProjectDirectory {
+        Some(ProjectDirectory {
             name: dir_name,
             path: path_str,
             is_git_repo,
             file_count,
             description,
-            is_counting,
-        };
-
-        Some((project, meta_update))
+            is_counting: false,
+        })
     } else {
         None
     }
 }
 
 #[tauri::command]
-pub async fn list_project_directories(root_path: String) -> Result<Vec<ProjectDirectory>, String> {
+pub async fn list_project_directories(
+    db_pool: State<'_, Arc<DbPool>>,
+    root_path: String,
+) -> Result<Vec<ProjectDirectory>, String> {
     let root = Path::new(&root_path);
     if !root.exists() || !root.is_dir() {
         return Err("Invalid root directory".to_string());
     }
 
-    let count_cache = load_file_count_cache();
-    let mut meta_cache = load_project_meta_cache();
-
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    
     let entries: Vec<std::path::PathBuf> = fs::read_dir(root)
         .map_err(|e| format!("Failed to read directory: {}", e))?
         .filter_map(|e| e.ok())
@@ -225,53 +170,37 @@ pub async fn list_project_directories(root_path: String) -> Result<Vec<ProjectDi
         .map(|entry| entry.path())
         .collect();
 
-    let results: Vec<(ProjectDirectory, Option<ProjectMetaCacheEntry>)> = entries
-        .par_iter()
-        .filter_map(|p| process_project_directory_fast(p.clone(), &count_cache, &meta_cache))
-        .collect();
-
-    let mut projects: Vec<ProjectDirectory> = Vec::with_capacity(results.len());
-    for (proj, update) in results {
-        if let Some(entry) = update { meta_cache.insert(proj.path.clone(), entry); }
-        projects.push(proj);
+    // Process in parallel but collect sequentially for database access
+    let mut projects = Vec::new();
+    for path in entries {
+        if let Some(project) = process_project_directory(path, &conn) {
+            projects.push(project);
+        }
     }
-    save_project_meta_cache(&meta_cache);
 
     projects.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     Ok(projects)
 }
 
 #[tauri::command]
-pub async fn update_project_file_count(project_path: String) -> Result<usize, String> {
+pub async fn update_project_file_count(
+    db_pool: State<'_, Arc<DbPool>>,
+    project_path: String,
+) -> Result<usize, String> {
     let path = Path::new(&project_path);
     if !path.exists() || !path.is_dir() { 
         return Err("Invalid project path".to_string()); 
     }
     
     let count = count_project_files(path);
-    let last_modified = get_dir_modified_time(path);
-    let cached_at = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or(Duration::from_secs(0))
-        .as_secs();
     
-    // Use the new GlobalFileCountCache structure
-    let mut cache = load_file_count_cache();
-    let file_cache = FileCountCache {
-        path: project_path.clone(),
-        count,
-        last_modified,
-        cached_at,
-        file_inventory: Some(HashMap::new()), // Initialize with empty inventory
-    };
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
     
-    cache.projects.insert(project_path, file_cache);
-    save_file_count_cache(&cache);
+    // Get or create project
+    if let Ok(Some(project)) = db::get_project_by_path(&conn, &project_path) {
+        db::update_project_file_count(&conn, project.id, count as i64)
+            .map_err(|e| e.to_string())?;
+    }
     
     Ok(count)
-}
-
-#[tauri::command]
-pub async fn clear_file_count_cache() -> Result<(), String> {
-    clear_file_count_cache_file()
 }

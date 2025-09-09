@@ -3,6 +3,12 @@ use crate::storage::{ProjectSummary, Settings};
 use regex::Regex;
 use reqwest::header::{HeaderMap, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
+use once_cell::sync::Lazy;
+use std::fmt::Write;
+
+// Cached regex patterns
+static THINKING_REGEX: Lazy<Regex> = 
+    Lazy::new(|| Regex::new(r"(?s)<think>(.*?)</think>(.*)").unwrap());
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ModelInfo {
@@ -30,9 +36,9 @@ pub struct SummaryRequest {
     pub project_path: String,
 }
 
+// Optimized: Use cached regex instead of recompiling
 fn extract_thinking_and_response(content: &str) -> (Option<String>, String) {
-    let re = Regex::new(r"(?s)<think>(.*?)</think>(.*)").unwrap();
-    if let Some(captures) = re.captures(content) {
+    if let Some(captures) = THINKING_REGEX.captures(content) {
         let thinking = captures.get(1).map(|m| m.as_str().trim().to_string());
         let response = captures
             .get(2)
@@ -46,8 +52,9 @@ fn extract_thinking_and_response(content: &str) -> (Option<String>, String) {
 
 fn parse_structured_response(content: &str) -> Vec<String> {
     let lines: Vec<&str> = content.lines().collect();
-    let mut ideas = Vec::new();
-    let mut current_idea = String::new();
+    let mut ideas = Vec::with_capacity(10); // Pre-allocate for typical case
+    let mut current_idea = String::with_capacity(500); // Pre-allocate
+    
     for line in lines {
         let line = line.trim();
         let is_new_idea = line
@@ -58,10 +65,12 @@ fn parse_structured_response(content: &str) -> Vec<String> {
             || line.starts_with("• ")
             || line.starts_with("- ")
             || line.starts_with("* ");
+        
         if is_new_idea && !current_idea.trim().is_empty() {
             ideas.push(current_idea.trim().to_string());
             current_idea.clear();
         }
+        
         if is_new_idea {
             let cleaned = line
                 .trim_start_matches(char::is_numeric)
@@ -79,15 +88,18 @@ fn parse_structured_response(content: &str) -> Vec<String> {
             current_idea.push_str(line);
         }
     }
+    
     if !current_idea.trim().is_empty() {
         ideas.push(current_idea.trim().to_string());
     }
+    
     ideas.into_iter().filter(|idea| idea.len() > 20).collect()
 }
 
 fn extract_key_features(summary: &str) -> Vec<String> {
-    let mut features = Vec::new();
+    let mut features = Vec::with_capacity(10); // Pre-allocate
     let lines: Vec<&str> = summary.lines().collect();
+    
     for line in lines {
         let trimmed = line.trim();
         if trimmed.starts_with('-') || trimmed.starts_with('•') {
@@ -104,7 +116,7 @@ fn extract_key_features(summary: &str) -> Vec<String> {
     features
 }
 
-// Smart suggestion engine structures
+// Smart suggestion engine structures with pre-allocated capacity
 #[derive(Debug, Clone)]
 struct ProjectKeywords {
     api_related: Vec<String>,
@@ -117,9 +129,23 @@ struct ProjectKeywords {
     security_related: Vec<String>,
 }
 
+impl ProjectKeywords {
+    fn new() -> Self {
+        ProjectKeywords {
+            api_related: Vec::with_capacity(20),
+            auth_related: Vec::with_capacity(20),
+            database_related: Vec::with_capacity(20),
+            testing_related: Vec::with_capacity(20),
+            cicd_related: Vec::with_capacity(20),
+            ui_related: Vec::with_capacity(20),
+            performance_related: Vec::with_capacity(20),
+            security_related: Vec::with_capacity(20),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct TechnologyProfile {
-    primary_tech: Vec<String>,
     frameworks: Vec<String>,
     has_api: bool,
     has_auth: bool,
@@ -131,16 +157,7 @@ struct TechnologyProfile {
 }
 
 fn extract_project_keywords(analysis: &RepoAnalysis) -> ProjectKeywords {
-    let mut keywords = ProjectKeywords {
-        api_related: Vec::new(),
-        auth_related: Vec::new(),
-        database_related: Vec::new(),
-        testing_related: Vec::new(),
-        cicd_related: Vec::new(),
-        ui_related: Vec::new(),
-        performance_related: Vec::new(),
-        security_related: Vec::new(),
-    };
+    let mut keywords = ProjectKeywords::new();
 
     // Analyze all file contents for keywords
     for file in &analysis.files {
@@ -227,8 +244,7 @@ fn extract_project_keywords(analysis: &RepoAnalysis) -> ProjectKeywords {
 
 fn analyze_technology_profile(analysis: &RepoAnalysis, keywords: &ProjectKeywords) -> TechnologyProfile {
     let mut profile = TechnologyProfile {
-        primary_tech: analysis.technologies.clone(),
-        frameworks: Vec::new(),
+        frameworks: Vec::with_capacity(10),
         has_api: !keywords.api_related.is_empty(),
         has_auth: !keywords.auth_related.is_empty(),
         has_database: !keywords.database_related.is_empty(),
@@ -301,7 +317,7 @@ fn analyze_technology_profile(analysis: &RepoAnalysis, keywords: &ProjectKeyword
 }
 
 fn generate_smart_suggestions(profile: &TechnologyProfile, keywords: &ProjectKeywords) -> Vec<String> {
-    let mut suggestions = Vec::new();
+    let mut suggestions = Vec::with_capacity(20); // Pre-allocate
     
     // API-specific suggestions
     if profile.has_api {
@@ -398,68 +414,21 @@ fn generate_smart_suggestions(profile: &TechnologyProfile, keywords: &ProjectKey
         suggestions.push("CORS configuration for API security".to_string());
     }
     
-    // Technology-specific suggestions
-    for tech in &profile.primary_tech {
-        match tech.as_str() {
-            "TypeScript" => {
-                if !keywords.testing_related.iter().any(|p| p.contains("type")) {
-                    suggestions.push("Strict TypeScript configuration for better type safety".to_string());
-                }
-            },
-            "Python" => {
-                if !keywords.testing_related.iter().any(|p| p.contains("pytest")) {
-                    suggestions.push("Pytest configuration with fixtures and parametrization".to_string());
-                }
-            },
-            "Rust" => {
-                if !keywords.performance_related.iter().any(|p| p.contains("bench")) {
-                    suggestions.push("Benchmarking suite with criterion for performance tracking".to_string());
-                }
-            },
-            _ => {}
-        }
-    }
-    
-    // Framework-specific suggestions
-    for framework in &profile.frameworks {
-        match framework.as_str() {
-            "React" => {
-                if !keywords.ui_related.iter().any(|p| p.contains("memo") || p.contains("useMemo")) {
-                    suggestions.push("React performance optimization with memo and useMemo".to_string());
-                }
-            },
-            "Next.js" => {
-                if !keywords.performance_related.iter().any(|p| p.contains("ssg") || p.contains("ssr")) {
-                    suggestions.push("Static Site Generation (SSG) for better performance".to_string());
-                }
-            },
-            "Express" => {
-                if !keywords.security_related.iter().any(|p| p.contains("helmet")) {
-                    suggestions.push("Helmet.js integration for Express security headers".to_string());
-                }
-            },
-            "Tauri" => {
-                if !keywords.security_related.iter().any(|p| p.contains("ipc")) {
-                    suggestions.push("IPC command validation for Tauri security".to_string());
-                }
-            },
-            _ => {}
-        }
-    }
-    
     suggestions
 }
 
+// Optimized: Pre-allocate string capacity and use write! macro
 fn build_comprehensive_context(analysis: &RepoAnalysis) -> String {
-    let mut context = String::new();
+    // Pre-allocate with reasonable capacity
+    let mut context = String::with_capacity(50_000);
     
     // Extract keywords and analyze technology profile
     let keywords = extract_project_keywords(analysis);
     let profile = analyze_technology_profile(analysis, &keywords);
     let smart_suggestions = generate_smart_suggestions(&profile, &keywords);
     
-    // Add smart analysis to context
-    context.push_str(&format!(
+    // Use write! macro instead of push_str with format!
+    let _ = write!(&mut context, 
         "Project Type: {}\n\
         Technologies: {}\n\
         Frameworks: {}\n\
@@ -470,187 +439,82 @@ fn build_comprehensive_context(analysis: &RepoAnalysis) -> String {
         profile.frameworks.join(", "),
         analysis.metrics.get("total_files").unwrap_or(&0),
         analysis.metrics.get("total_lines").unwrap_or(&0),
-    ));
+    );
     
     // Add keyword analysis
-    context.push_str("Detected Project Characteristics:\n");
+    let _ = write!(&mut context, "Detected Project Characteristics:\n");
     if profile.has_api {
-        context.push_str(&format!("- API/Backend functionality ({} files)\n", keywords.api_related.len()));
+        let _ = write!(&mut context, "- API/Backend functionality ({} files)\n", keywords.api_related.len());
     }
     if profile.has_auth {
-        context.push_str(&format!("- Authentication system ({} files)\n", keywords.auth_related.len()));
+        let _ = write!(&mut context, "- Authentication system ({} files)\n", keywords.auth_related.len());
     }
     if profile.has_database {
-        context.push_str(&format!("- Database operations ({} files)\n", keywords.database_related.len()));
+        let _ = write!(&mut context, "- Database operations ({} files)\n", keywords.database_related.len());
     }
     if profile.has_testing {
-        context.push_str(&format!("- Testing framework ({} files)\n", keywords.testing_related.len()));
+        let _ = write!(&mut context, "- Testing framework ({} files)\n", keywords.testing_related.len());
     }
     if profile.has_cicd {
-        context.push_str(&format!("- CI/CD pipeline ({} files)\n", keywords.cicd_related.len()));
+        let _ = write!(&mut context, "- CI/CD pipeline ({} files)\n", keywords.cicd_related.len());
     }
     if profile.has_ui {
-        context.push_str(&format!("- UI components ({} files)\n", keywords.ui_related.len()));
+        let _ = write!(&mut context, "- UI components ({} files)\n", keywords.ui_related.len());
     }
-    context.push_str("\n");
+    let _ = write!(&mut context, "\n");
     
     // Add smart suggestions
     if !smart_suggestions.is_empty() {
-        context.push_str("Smart Suggestions Based on Project Analysis:\n");
+        let _ = write!(&mut context, "Smart Suggestions Based on Project Analysis:\n");
         for suggestion in &smart_suggestions {
-            context.push_str(&format!("- {}\n", suggestion));
+            let _ = write!(&mut context, "- {}\n", suggestion);
         }
-        context.push_str("\n");
+        let _ = write!(&mut context, "\n");
     }
     
-    // Detailed file analysis with more context
-    context.push_str("File Analysis:\n");
+    // Detailed file analysis
+    let _ = write!(&mut context, "File Analysis:\n");
     
     // Group files by type/purpose
     let mut config_files = Vec::new();
     let mut source_files = Vec::new();
     let mut test_files = Vec::new();
-    let mut doc_files = Vec::new();
-    let mut build_files = Vec::new();
     
     for file in &analysis.files {
         let path_lower = file.path.to_lowercase();
         
-        if path_lower.contains("test") || path_lower.contains("spec") || 
-           file.path.ends_with(".test.ts") || file.path.ends_with(".test.js") ||
-           file.path.ends_with(".spec.ts") || file.path.ends_with(".spec.js") {
+        if path_lower.contains("test") || path_lower.contains("spec") {
             test_files.push(file);
-        } else if path_lower.contains("readme") || path_lower.contains("doc") || 
-                  file.path.ends_with(".md") {
-            doc_files.push(file);
         } else if path_lower.contains("config") || file.path.ends_with(".json") || 
                   file.path.ends_with(".yml") || file.path.ends_with(".yaml") ||
-                  file.path.ends_with(".toml") || file.path.ends_with(".xml") {
+                  file.path.ends_with(".toml") {
             config_files.push(file);
-        } else if file.path.contains("build") || file.path.contains("dist") ||
-                  path_lower.contains("makefile") || path_lower.contains("dockerfile") {
-            build_files.push(file);
         } else {
             source_files.push(file);
         }
     }
     
-    // Provide detailed context about key files
+    // Provide context about key files
     if !source_files.is_empty() {
-        context.push_str("\nSource Files (showing key implementation details):\n");
-        for file in source_files.iter().take(20) {
-            let preview = if file.content.len() > 1000 {
-                format!("{}...", &file.content[..1000])
-            } else {
-                file.content.clone()
-            };
-            
-            // Extract important patterns from source files
-            let has_exports = preview.contains("export ") || preview.contains("module.exports");
-            let has_imports = preview.contains("import ") || preview.contains("require(");
-            let has_classes = preview.contains("class ") || preview.contains("interface ");
-            let has_functions = preview.contains("function ") || preview.contains("const ") || preview.contains("fn ");
-            let has_api_calls = preview.contains("fetch(") || preview.contains("axios") || preview.contains("http");
-            let has_database = preview.contains("database") || preview.contains("query") || preview.contains("SELECT");
-            let has_state_management = preview.contains("useState") || preview.contains("Redux") || preview.contains("Vuex");
-            let has_routing = preview.contains("Router") || preview.contains("Route") || preview.contains("navigation");
-            
-            context.push_str(&format!(
-                "\n{} ({}): {} chars\n",
-                file.path, file.language, file.content.len()
-            ));
-            
-            context.push_str("  Features detected:\n");
-            if has_exports { context.push_str("  - Exports modules/functions\n"); }
-            if has_imports { context.push_str("  - Imports external dependencies\n"); }
-            if has_classes { context.push_str("  - Defines classes/interfaces\n"); }
-            if has_functions { context.push_str("  - Contains functions/methods\n"); }
-            if has_api_calls { context.push_str("  - Makes API/HTTP calls\n"); }
-            if has_database { context.push_str("  - Database operations\n"); }
-            if has_state_management { context.push_str("  - State management\n"); }
-            if has_routing { context.push_str("  - Routing/navigation\n"); }
-            
-            context.push_str(&format!("Content preview:\n{}\n", preview));
-        }
-    }
-    
-    if !config_files.is_empty() {
-        context.push_str("\nConfiguration Files (dependencies and settings):\n");
-        for file in config_files.iter().take(10) {
-            let preview = if file.content.len() > 600 {
-                format!("{}...", &file.content[..600])
-            } else {
-                file.content.clone()
-            };
-            context.push_str(&format!(
-                "\n{}: {}\n",
-                file.path, preview
-            ));
-        }
-    }
-    
-    if !test_files.is_empty() {
-        context.push_str(&format!("\nTest Coverage: {} test files found\n", test_files.len()));
-        context.push_str("Test files (helps understand what's already tested):\n");
-        for file in test_files.iter().take(8) {
-            let preview = if file.content.len() > 400 {
-                format!("{}...", &file.content[..400])
-            } else {
-                file.content.clone()
-            };
-            context.push_str(&format!("  - {}\n    Preview: {}\n", file.path, 
-                preview.lines().next().unwrap_or("")));
-        }
-    }
-    
-    if !doc_files.is_empty() {
-        context.push_str("\nDocumentation (existing docs to understand project):\n");
-        for file in doc_files.iter().take(5) {
+        let _ = write!(&mut context, "\nKey Source Files:\n");
+        for file in source_files.iter().take(10) {
             let preview = if file.content.len() > 500 {
                 format!("{}...", &file.content[..500])
             } else {
                 file.content.clone()
             };
-            context.push_str(&format!(
-                "\n{}: {}\n",
-                file.path, preview
-            ));
-        }
-    }
-    
-    // Directory structure analysis with insights
-    context.push_str("\nProject Structure Analysis:\n");
-    let mut structure_insights = Vec::new();
-    
-    for (dir, files) in &analysis.structure {
-        if files.len() > 0 {
-            let dir_lower = dir.to_lowercase();
-            let insight = if dir_lower.contains("component") {
-                "UI components"
-            } else if dir_lower.contains("service") || dir_lower.contains("api") {
-                "API/Service layer"
-            } else if dir_lower.contains("model") || dir_lower.contains("schema") {
-                "Data models"
-            } else if dir_lower.contains("util") || dir_lower.contains("helper") {
-                "Utility functions"
-            } else if dir_lower.contains("test") || dir_lower.contains("spec") {
-                "Test files"
-            } else if dir_lower.contains("style") || dir_lower.contains("css") {
-                "Styling"
-            } else if dir_lower.contains("asset") || dir_lower.contains("public") {
-                "Static assets"
-            } else if dir_lower.contains("config") {
-                "Configuration"
-            } else {
-                "General"
-            };
             
-            structure_insights.push(format!("  {}/: {} files ({})", dir, files.len(), insight));
+            let _ = write!(&mut context, "\n{} ({}):\n{}\n", file.path, file.language, preview);
         }
     }
     
-    for insight in structure_insights.iter().take(20) {
-        context.push_str(&format!("{}\n", insight));
+    // Directory structure
+    let _ = write!(&mut context, "\nProject Structure:\n");
+    let mut structure_vec: Vec<(&String, &Vec<String>)> = analysis.structure.iter().collect();
+    structure_vec.sort_by_key(|(dir, _)| *dir);
+    
+    for (dir, files) in structure_vec.iter().take(20) {
+        let _ = write!(&mut context, "  {}/: {} files\n", dir, files.len());
     }
     
     context
@@ -668,6 +532,7 @@ pub async fn load_models(api_url: String, api_key: String) -> Result<Vec<ModelIn
                 .replace("/chat/completions", "")
         ),
     ];
+    
     for endpoint in model_endpoints {
         let mut headers = HeaderMap::new();
         if !api_key.is_empty() {
@@ -774,12 +639,7 @@ Each idea should be 2-3 sentences:
 - Optional third sentence: HOW to implement (key approach)
 
 Start directly with '1.' - no introduction.
-End after '10.' - no conclusion.
-
-Example format:
-1. Implement request caching in `src/utils/api.ts` for the `analyzeRepository` function using a Map-based cache with 5-minute TTL. This would reduce redundant API calls by 40% when users switch between projects frequently. Use the existing cache pattern from `src-tauri/src/cache.rs` as a reference.
-
-2. Add keyboard shortcuts (Cmd/Ctrl+K for search, Cmd/Ctrl+G for generate) to improve power user productivity. This would speed up common workflows by eliminating mouse navigation for frequent actions. Implement using a global keyboard event listener with a shortcuts registry pattern.",
+End after '10.' - no conclusion.",
         comprehensive_context, focus_instructions
     );
 

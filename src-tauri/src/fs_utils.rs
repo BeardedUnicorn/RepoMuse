@@ -1,10 +1,18 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 use ignore::WalkBuilder;
 use ignore::overrides::{Override, OverrideBuilder};
 use std::fs::File;
 use std::io::{BufReader, Read};
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
+use std::collections::HashMap;
+use rayon::prelude::*;
+
+// Cache for walker builders to avoid recreating them
+static WALKER_CACHE: Lazy<Mutex<HashMap<PathBuf, Override>>> = 
+    Lazy::new(|| Mutex::new(HashMap::with_capacity(10)));
 
 // Determine language from file extension
 pub fn get_language_from_extension(path: &str) -> String {
@@ -56,6 +64,31 @@ pub fn should_analyze_file(path: &str) -> bool {
     true
 }
 
+// Get or create cached overrides for a path
+fn get_cached_overrides(root: &Path) -> Option<Override> {
+    let root_buf = root.to_path_buf();
+    
+    // Try to get from cache first
+    if let Ok(cache) = WALKER_CACHE.lock() {
+        if let Some(overrides) = cache.get(&root_buf) {
+            return Some(overrides.clone());
+        }
+    }
+    
+    // Create new overrides
+    let overrides = default_overrides(root)?;
+    
+    // Store in cache
+    if let Ok(mut cache) = WALKER_CACHE.lock() {
+        // Limit cache size to prevent unbounded growth
+        if cache.len() > 100 {
+            cache.clear();
+        }
+        cache.insert(root_buf, overrides.clone());
+    }
+    
+    Some(overrides)
+}
 
 // Build a gitignore-aware walker with sensible defaults
 pub fn walker(path: &Path) -> ignore::Walk {
@@ -68,7 +101,7 @@ pub fn walker(path: &Path) -> ignore::Walk {
         .ignore(true)
         .hidden(true)
         .parents(true);
-    if let Some(overrides) = default_overrides(path) {
+    if let Some(overrides) = get_cached_overrides(path) {
         builder.overrides(overrides);
     }
     builder.build()
@@ -85,7 +118,7 @@ pub fn walker_with_depth(path: &Path, max_depth: Option<usize>) -> ignore::Walk 
         .hidden(true)
         .parents(true)
         .max_depth(max_depth);
-    if let Some(overrides) = default_overrides(path) {
+    if let Some(overrides) = get_cached_overrides(path) {
         builder.overrides(overrides);
     }
     builder.build()
@@ -122,35 +155,60 @@ fn default_overrides(root: &Path) -> Option<Override> {
     }
 }
 
-// Read up to cap_bytes from a file as lossy UTF-8 text
-pub fn read_text_prefix(path: &str, cap_bytes: usize) -> Option<String> {
-    let file = File::open(path).ok()?;
-    let mut reader = BufReader::with_capacity(64 * 1024, file);
-    let mut buf = Vec::with_capacity(cap_bytes.min(64 * 1024));
+// Optimized: Read only up to cap_bytes from a file and return whether it was truncated
+pub fn read_text_prefix_limited(path: &str, cap_bytes: usize) -> Result<(String, bool), std::io::Error> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::with_capacity(8192, file);
+    let mut buffer = Vec::with_capacity(cap_bytes.min(8192));
     let mut total = 0usize;
-    let mut chunk = [0u8; 8192];
+    let mut chunk = [0u8; 4096]; // Smaller chunks for better control
+    let mut was_truncated = false;
+    
     while total < cap_bytes {
         let to_read = (cap_bytes - total).min(chunk.len());
         match reader.read(&mut chunk[..to_read]) {
-            Ok(0) => break,
+            Ok(0) => break, // EOF
             Ok(n) => {
-                buf.extend_from_slice(&chunk[..n]);
+                buffer.extend_from_slice(&chunk[..n]);
                 total += n;
+                if total >= cap_bytes {
+                    was_truncated = true;
+                    break;
+                }
             }
-            Err(_) => break,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
         }
     }
-    Some(String::from_utf8_lossy(&buf).into_owned())
+    
+    // Check if there's more data available
+    if !was_truncated {
+        let mut test_byte = [0u8; 1];
+        if reader.read(&mut test_byte)? > 0 {
+            was_truncated = true;
+        }
+    }
+    
+    Ok((String::from_utf8_lossy(&buffer).into_owned(), was_truncated))
+}
+
+// Legacy function for compatibility - redirects to optimized version
+#[allow(dead_code)]
+pub fn read_text_prefix(path: &str, cap_bytes: usize) -> Option<String> {
+    read_text_prefix_limited(path, cap_bytes)
+        .ok()
+        .map(|(content, _)| content)
 }
 
 // Fast non-crypto short hash of first N bytes (FNV-1a variant)
 pub fn short_hash_prefix(path: &str, cap_bytes: usize) -> Option<u64> {
     let file = File::open(path).ok()?;
-    let mut reader = BufReader::with_capacity(64 * 1024, file);
+    let mut reader = BufReader::with_capacity(8192, file);
     let mut total = 0usize;
-    let mut chunk = [0u8; 8192];
+    let mut chunk = [0u8; 4096];
     let mut hash: u64 = 0xcbf29ce484222325; // FNV offset basis
     const PRIME: u64 = 0x100000001b3;
+    
     while total < cap_bytes {
         let to_read = (cap_bytes - total).min(chunk.len());
         let n = reader.read(&mut chunk[..to_read]).ok()?;
@@ -161,12 +219,18 @@ pub fn short_hash_prefix(path: &str, cap_bytes: usize) -> Option<u64> {
         }
         total += n;
     }
+    
     Some(hash)
 }
 
 // Parallel walker builders
 pub fn walker_parallel(path: &Path) -> ignore::WalkParallel {
     let mut builder = WalkBuilder::new(path);
+    let num_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .min(8);
+    
     builder
         .follow_links(false)
         .git_ignore(true)
@@ -174,14 +238,14 @@ pub fn walker_parallel(path: &Path) -> ignore::WalkParallel {
         .git_exclude(true)
         .ignore(true)
         .hidden(true)
-        .parents(true);
-    if let Some(overrides) = default_overrides(path) {
+        .parents(true)
+        .threads(num_threads);
+        
+    if let Some(overrides) = get_cached_overrides(path) {
         builder.overrides(overrides);
     }
     builder.build_parallel()
 }
-
-// (removed unused: is_ignored_dir_name, walker_parallel_with_depth)
 
 // Directory last modified seconds since epoch
 pub fn get_dir_modified_time(path: &Path) -> u64 {
@@ -194,4 +258,44 @@ pub fn get_dir_modified_time(path: &Path) -> u64 {
         }
     }
     0
+}
+
+// Optimized batch file reading for multiple files
+#[allow(dead_code)]
+pub fn read_files_batch(paths: &[String], cap_bytes: usize) -> Vec<Option<(String, bool)>> {
+    paths.par_iter()
+        .map(|path| read_text_prefix_limited(path, cap_bytes).ok())
+        .collect()
+}
+
+// Check if a file is likely binary by sampling first bytes
+#[allow(dead_code)]
+pub fn is_likely_binary(path: &str) -> bool {
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+    
+    let mut reader = BufReader::new(file);
+    let mut buffer = [0u8; 512];
+    
+    let bytes_read = match reader.read(&mut buffer) {
+        Ok(n) => n,
+        Err(_) => return false,
+    };
+    
+    // Check for null bytes (common in binary files)
+    for &byte in &buffer[..bytes_read] {
+        if byte == 0 {
+            return true;
+        }
+    }
+    
+    // Check for high ratio of non-printable characters
+    let non_printable = buffer[..bytes_read]
+        .iter()
+        .filter(|&&b| b < 0x20 && b != 0x09 && b != 0x0A && b != 0x0D)
+        .count();
+    
+    non_printable as f32 / bytes_read as f32 > 0.3
 }

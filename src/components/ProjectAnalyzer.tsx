@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ProjectDirectory, RepoAnalysis, Settings, ProjectSummary, ProjectInsights, GitLog, TaskList } from '../types';
 import { analyzeRepository, analyzeRepositoryFresh, analyzeRepositoryLazy, triggerFullScan, cancelAnalysis, generateIdeaList, generateProjectSummary, saveProjectSummary, loadProjectSummary, getProjectInsights, getGitLog, loadTaskList } from '../utils/api';
 import Spinner from './ui/Spinner';
@@ -68,7 +68,7 @@ const formatTime = (ms: number): string => {
 };
 
 // Progress Bar Component
-const ProgressBar: React.FC<{ progress: ProgressUpdate }> = ({ progress }) => {
+const ProgressBar: React.FC<{ progress: ProgressUpdate }> = React.memo(({ progress }) => {
   const getPhaseColor = (phase: string) => {
     switch (phase) {
       case 'cached': return 'bg-purple-500';
@@ -161,7 +161,7 @@ const ProgressBar: React.FC<{ progress: ProgressUpdate }> = ({ progress }) => {
               <p className="text-xs text-foreground-tertiary truncate" title={progress.current_file}>
                 📄 {basename(progress.current_file)}
               </p>
-              <Button size="sm" variant="ghost" onClick={() => progress.current_file && openPath(progress.current_file!)}>
+              <Button size="sm" variant="ghost" onClick={() => progress.current_file && openPath(progress.current_file)}>
                 Open
               </Button>
             </div>
@@ -187,7 +187,7 @@ const ProgressBar: React.FC<{ progress: ProgressUpdate }> = ({ progress }) => {
       </div>
     </Card>
   );
-};
+});
 
 const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, settings }) => {
   const [analysis, setAnalysis] = useState<RepoAnalysis | null>(null);
@@ -212,6 +212,32 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
   const [taskUpdateTrigger, setTaskUpdateTrigger] = useState(0);
   const [showSizeDetails, setShowSizeDetails] = useState(false);
   const { toast } = useToast();
+
+  // Optimized: Batch progress updates
+  const pendingProgressUpdates = useRef<ProgressUpdate[]>([]);
+  const progressFlushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  const flushProgressUpdates = useCallback(() => {
+    if (pendingProgressUpdates.current.length > 0) {
+      const latestUpdate = pendingProgressUpdates.current[pendingProgressUpdates.current.length - 1];
+      setProgress(latestUpdate);
+      pendingProgressUpdates.current = [];
+    }
+  }, []);
+  
+  const queueProgressUpdate = useCallback((update: ProgressUpdate) => {
+    pendingProgressUpdates.current.push(update);
+    
+    // Clear existing timeout
+    if (progressFlushTimeoutRef.current) {
+      clearTimeout(progressFlushTimeoutRef.current);
+    }
+    
+    // Set new timeout to flush updates
+    progressFlushTimeoutRef.current = setTimeout(() => {
+      flushProgressUpdates();
+    }, 500); // Increased from 250ms to 500ms
+  }, [flushProgressUpdates]);
 
   useEffect(() => {
     if (selectedProject) {
@@ -240,10 +266,11 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
     }
   }, [selectedProject]);
 
-  // Subscribe to progress events
+  // Subscribe to progress events with improved throttling
   useEffect(() => {
     let unlisten: (() => void) | null = null;
-    const lastEmitRef = { current: 0 } as React.MutableRefObject<number>;
+    const lastUpdateTime = { current: 0 };
+    const MIN_UPDATE_INTERVAL = 500; // Increased from 250ms
     
     async function setupListener() {
       try {
@@ -253,10 +280,15 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
           // Only update if it's for the current project
           if (selectedProject && progressData.folder_path === selectedProject.path) {
             const now = Date.now();
-            if (now - lastEmitRef.current < 250) {
+            
+            // More aggressive throttling
+            if (now - lastUpdateTime.current < MIN_UPDATE_INTERVAL && !progressData.is_complete) {
+              // Queue the update instead of dropping it
+              queueProgressUpdate(progressData);
               return;
             }
-            lastEmitRef.current = now;
+            
+            lastUpdateTime.current = now;
             setProgress(progressData);
             
             // Hide progress when complete after a delay
@@ -278,8 +310,12 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
       if (unlisten) {
         unlisten();
       }
+      // Clear any pending progress updates
+      if (progressFlushTimeoutRef.current) {
+        clearTimeout(progressFlushTimeoutRef.current);
+      }
     };
-  }, [selectedProject?.path]);
+  }, [selectedProject?.path, queueProgressUpdate]);
 
   const analyzeProject = async () => {
     if (!selectedProject) return;

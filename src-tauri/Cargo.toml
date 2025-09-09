@@ -5,12 +5,7 @@ description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "repomuse_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
@@ -30,8 +25,17 @@ regex = "1"
 dirs = "5"
 chrono = "0.4"
 rayon = "1.10"
-bincode = "1.3"
 once_cell = "1"
+rusqlite = { version = "0.31", features = ["bundled", "blob", "chrono"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.25"
+bincode = "1.3"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
