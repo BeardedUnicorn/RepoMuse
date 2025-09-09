@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use walkdir::WalkDir;
+// use ignore::WalkBuilder; // using helper walkers in fs_utils
+use crate::fs_utils::walker_with_depth;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GitRemote {
@@ -199,9 +200,10 @@ fn get_testing_info(path: &Path) -> TestingInfo {
   let mut test_file_count = 0usize;
   let mut source_file_count = 0usize;
   let mut patterns: Vec<String> = Vec::new();
-  if let Ok(entries) = WalkDir::new(path).max_depth(4).into_iter().collect::<Result<Vec<_>, _>>() {
-    for entry in entries {
-      if entry.path().is_file() {
+  {
+    for result in walker_with_depth(path, Some(4)) {
+      let entry = match result { Ok(e) => e, Err(_) => continue };
+      if entry.file_type().map_or(false, |ft| ft.is_file()) {
         let path_str = entry.path().to_string_lossy();
         let name = entry.path().file_name().unwrap_or_default().to_string_lossy().to_string();
         if name.ends_with(".test.js") || name.ends_with(".test.ts") || name.ends_with(".test.jsx") || name.ends_with(".test.tsx")

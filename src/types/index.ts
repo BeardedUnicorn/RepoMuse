@@ -17,13 +17,41 @@ export interface FileInfo {
   size: number;
 }
 
+export interface FileSizeInfo {
+  path: string;
+  size_bytes: number;
+  size_kb: number;
+  language: string;
+}
+
+export interface SizeMetrics {
+  total_size_bytes: number;
+  total_size_kb: number;
+  total_size_mb: number;
+  analyzed_size_bytes: number;
+  analyzed_size_kb: number;
+  analyzed_size_mb: number;
+  largest_files: FileSizeInfo[];
+  size_by_language: Record<string, number>;
+}
+
+export interface ScanProgress {
+  files_scanned: number;
+  scan_limit: number;
+  is_complete: boolean;
+  estimated_total_files?: number;
+}
+
 export interface RepoAnalysis {
   files: FileInfo[];
   structure: Record<string, string[]>;
   technologies: string[];
   metrics: Record<string, number>;
+  size_metrics: SizeMetrics;
   generated_at?: string;
   from_cache?: boolean;
+  is_lazy_scan?: boolean;
+  scan_progress?: ScanProgress;
 }
 
 export interface IdeaRequest {

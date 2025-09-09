@@ -4,13 +4,13 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
-use walkdir::WalkDir;
+// use ignore::WalkBuilder; // now using helper walkers in fs_utils
 
 use crate::cache::{
     clear_file_count_cache_file, load_file_count_cache, load_project_meta_cache, save_file_count_cache,
-    save_project_meta_cache, FileCountCache, ProjectMetaCacheEntry,
+    save_project_meta_cache, FileCountCache, ProjectMetaCacheEntry, GlobalFileCountCache,
 };
-use crate::fs_utils::{get_dir_modified_time, should_analyze_file};
+use crate::fs_utils::{get_dir_modified_time, should_analyze_file, walker, walker_with_depth, walker_parallel};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProjectDirectory {
@@ -80,9 +80,10 @@ fn estimate_deep_files(path: &Path) -> usize {
     let mut count = 0;
     let mut checked = 0;
     const MAX_CHECK: usize = 50;
-    for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()).take(MAX_CHECK) {
+    for result in walker(path).take(MAX_CHECK) {
+        let entry = match result { Ok(e) => e, Err(_) => continue };
         checked += 1;
-        if entry.path().is_file() {
+        if entry.file_type().map_or(false, |ft| ft.is_file()) {
             let path_str = entry.path().to_string_lossy();
             if should_analyze_file(&path_str) {
                 count += 1;
@@ -97,12 +98,13 @@ fn estimate_file_count(path: &Path) -> usize {
     let mut depth = 0;
     const MAX_DEPTH: usize = 3;
     const SAMPLE_FACTOR: usize = 10;
-    for entry in WalkDir::new(path).max_depth(MAX_DEPTH).into_iter().filter_map(|e| e.ok()) {
-        if entry.path().is_file() {
+    for result in walker_with_depth(path, Some(MAX_DEPTH)) {
+        let entry = match result { Ok(e) => e, Err(_) => continue };
+        if entry.file_type().map_or(false, |ft| ft.is_file()) {
             let path_str = entry.path().to_string_lossy();
             if should_analyze_file(&path_str) { count += 1; }
         }
-        if entry.path().is_dir() && entry.depth() == MAX_DEPTH {
+        if entry.file_type().map_or(false, |ft| ft.is_dir()) && entry.depth() == MAX_DEPTH {
             depth += 1;
             if depth % SAMPLE_FACTOR == 0 {
                 count += estimate_deep_files(entry.path()) * SAMPLE_FACTOR;
@@ -113,17 +115,28 @@ fn estimate_file_count(path: &Path) -> usize {
 }
 
 fn count_project_files(path: &Path) -> usize {
-    WalkDir::new(path)
-        .into_iter()
-        .par_bridge()
-        .filter_map(|e| e.ok())
-        .filter(|entry| entry.path().is_file() && should_analyze_file(&entry.path().to_string_lossy()))
-        .count()
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let counter = AtomicUsize::new(0);
+    walker_parallel(path).run(|| {
+        let c = &counter;
+        Box::new(move |entry_res| {
+            if let Ok(entry) = entry_res {
+                if entry.file_type().map_or(false, |ft| ft.is_file()) {
+                    let p = entry.path();
+                    if should_analyze_file(&p.to_string_lossy()) {
+                        c.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            }
+            ignore::WalkState::Continue
+        })
+    });
+    counter.load(Ordering::Relaxed)
 }
 
 fn process_project_directory_fast(
     path: std::path::PathBuf,
-    count_cache: &HashMap<String, FileCountCache>,
+    count_cache: &GlobalFileCountCache,
     meta_cache: &HashMap<String, ProjectMetaCacheEntry>,
 ) -> Option<(ProjectDirectory, Option<ProjectMetaCacheEntry>)> {
     let dir_name = path
@@ -169,7 +182,8 @@ fn process_project_directory_fast(
             });
         }
 
-        let (file_count, is_counting) = if let Some(cached) = count_cache.get(&path_str) {
+        // Get cached file count if available
+        let (file_count, is_counting) = if let Some(cached) = count_cache.projects.get(&path_str) {
             if cached.last_modified >= dir_modified && (now - cached.cached_at) < 86400 {
                 (cached.count, false)
             } else {
@@ -230,16 +244,30 @@ pub async fn list_project_directories(root_path: String) -> Result<Vec<ProjectDi
 #[tauri::command]
 pub async fn update_project_file_count(project_path: String) -> Result<usize, String> {
     let path = Path::new(&project_path);
-    if !path.exists() || !path.is_dir() { return Err("Invalid project path".to_string()); }
+    if !path.exists() || !path.is_dir() { 
+        return Err("Invalid project path".to_string()); 
+    }
+    
     let count = count_project_files(path);
     let last_modified = get_dir_modified_time(path);
     let cached_at = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or(Duration::from_secs(0))
         .as_secs();
+    
+    // Use the new GlobalFileCountCache structure
     let mut cache = load_file_count_cache();
-    cache.insert(project_path.clone(), FileCountCache { path: project_path, count, last_modified, cached_at });
+    let file_cache = FileCountCache {
+        path: project_path.clone(),
+        count,
+        last_modified,
+        cached_at,
+        file_inventory: Some(HashMap::new()), // Initialize with empty inventory
+    };
+    
+    cache.projects.insert(project_path, file_cache);
     save_file_count_cache(&cache);
+    
     Ok(count)
 }
 
@@ -247,4 +275,3 @@ pub async fn update_project_file_count(project_path: String) -> Result<usize, St
 pub async fn clear_file_count_cache() -> Result<(), String> {
     clear_file_count_cache_file()
 }
-

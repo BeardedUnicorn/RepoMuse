@@ -13,6 +13,18 @@ export async function analyzeRepositoryFresh(folderPath: string): Promise<RepoAn
   return await invoke('analyze_repository_fresh', { folderPath });
 }
 
+export async function analyzeRepositoryLazy(folderPath: string): Promise<RepoAnalysis> {
+  return await invoke('analyze_repository_lazy', { folderPath });
+}
+
+export async function triggerFullScan(folderPath: string): Promise<RepoAnalysis> {
+  return await invoke('trigger_full_scan', { folderPath });
+}
+
+export async function cancelAnalysis(folderPath: string): Promise<void> {
+  return await invoke('cancel_analysis', { folderPath });
+}
+
 export async function generateIdeaList(request: IdeaRequest): Promise<string[]> {
   return await invoke('generate_ideas', { request });
 }
@@ -49,11 +61,35 @@ export async function getGitLog(projectPath: string): Promise<GitLog> {
   return await invoke('get_git_log', { projectPath });
 }
 
-// New task list functions
+// Task list functions
 export async function loadTaskList(projectPath: string): Promise<TaskList | null> {
   return await invoke('load_task_list', { projectPath });
 }
 
 export async function saveTaskList(taskList: TaskList): Promise<void> {
   return await invoke('save_task_list', { taskList });
+}
+
+// Favorites functions
+export async function saveFavoriteProjects(favorites: string[]): Promise<void> {
+  console.log('[API] Saving favorites:', favorites);
+  try {
+    await invoke('save_favorite_projects', { favorites });
+    console.log('[API] Favorites saved successfully');
+  } catch (error) {
+    console.error('[API] Failed to save favorites:', error);
+    throw error;
+  }
+}
+
+export async function loadFavoriteProjects(): Promise<string[]> {
+  console.log('[API] Loading favorites...');
+  try {
+    const favorites = await invoke<string[]>('load_favorite_projects');
+    console.log('[API] Favorites loaded:', favorites);
+    return favorites;
+  } catch (error) {
+    console.error('[API] Failed to load favorites:', error);
+    return [];
+  }
 }
