@@ -1,6 +1,4 @@
-use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
 use ignore::WalkBuilder;
 use ignore::overrides::{Override, OverrideBuilder};
 use std::fs::File;
@@ -8,7 +6,7 @@ use std::io::{BufReader, Read};
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use std::collections::HashMap;
-use rayon::prelude::*;
+ 
 
 // Cache for walker builders to avoid recreating them
 static WALKER_CACHE: Lazy<Mutex<HashMap<PathBuf, Override>>> = 
@@ -192,36 +190,6 @@ pub fn read_text_prefix_limited(path: &str, cap_bytes: usize) -> Result<(String,
     Ok((String::from_utf8_lossy(&buffer).into_owned(), was_truncated))
 }
 
-// Legacy function for compatibility - redirects to optimized version
-#[allow(dead_code)]
-pub fn read_text_prefix(path: &str, cap_bytes: usize) -> Option<String> {
-    read_text_prefix_limited(path, cap_bytes)
-        .ok()
-        .map(|(content, _)| content)
-}
-
-// Fast non-crypto short hash of first N bytes (FNV-1a variant)
-pub fn short_hash_prefix(path: &str, cap_bytes: usize) -> Option<u64> {
-    let file = File::open(path).ok()?;
-    let mut reader = BufReader::with_capacity(8192, file);
-    let mut total = 0usize;
-    let mut chunk = [0u8; 4096];
-    let mut hash: u64 = 0xcbf29ce484222325; // FNV offset basis
-    const PRIME: u64 = 0x100000001b3;
-    
-    while total < cap_bytes {
-        let to_read = (cap_bytes - total).min(chunk.len());
-        let n = reader.read(&mut chunk[..to_read]).ok()?;
-        if n == 0 { break; }
-        for &b in &chunk[..n] {
-            hash ^= b as u64;
-            hash = hash.wrapping_mul(PRIME);
-        }
-        total += n;
-    }
-    
-    Some(hash)
-}
 
 // Parallel walker builders
 pub fn walker_parallel(path: &Path) -> ignore::WalkParallel {
@@ -247,55 +215,4 @@ pub fn walker_parallel(path: &Path) -> ignore::WalkParallel {
     builder.build_parallel()
 }
 
-// Directory last modified seconds since epoch
-pub fn get_dir_modified_time(path: &Path) -> u64 {
-    if let Ok(metadata) = fs::metadata(path) {
-        if let Ok(modified) = metadata.modified() {
-            return modified
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap_or(Duration::from_secs(0))
-                .as_secs();
-        }
-    }
-    0
-}
-
-// Optimized batch file reading for multiple files
-#[allow(dead_code)]
-pub fn read_files_batch(paths: &[String], cap_bytes: usize) -> Vec<Option<(String, bool)>> {
-    paths.par_iter()
-        .map(|path| read_text_prefix_limited(path, cap_bytes).ok())
-        .collect()
-}
-
-// Check if a file is likely binary by sampling first bytes
-#[allow(dead_code)]
-pub fn is_likely_binary(path: &str) -> bool {
-    let file = match File::open(path) {
-        Ok(f) => f,
-        Err(_) => return false,
-    };
-    
-    let mut reader = BufReader::new(file);
-    let mut buffer = [0u8; 512];
-    
-    let bytes_read = match reader.read(&mut buffer) {
-        Ok(n) => n,
-        Err(_) => return false,
-    };
-    
-    // Check for null bytes (common in binary files)
-    for &byte in &buffer[..bytes_read] {
-        if byte == 0 {
-            return true;
-        }
-    }
-    
-    // Check for high ratio of non-printable characters
-    let non_printable = buffer[..bytes_read]
-        .iter()
-        .filter(|&&b| b < 0x20 && b != 0x09 && b != 0x0A && b != 0x0D)
-        .count();
-    
-    non_printable as f32 / bytes_read as f32 > 0.3
-}
+ 

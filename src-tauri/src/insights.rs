@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-// use ignore::WalkBuilder; // using helper walkers in fs_utils
 use crate::fs_utils::walker_with_depth;
 
 #[derive(Debug, Serialize, Deserialize)]

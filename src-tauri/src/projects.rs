@@ -1,11 +1,10 @@
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
 
-use crate::fs_utils::{should_analyze_file, walker, walker_parallel};
+use crate::fs_utils::{should_analyze_file, walker_parallel};
 use crate::db::{self, DbPool};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

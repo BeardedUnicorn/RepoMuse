@@ -1,7 +1,6 @@
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use std::sync::Arc;
 use r2d2_sqlite::SqliteConnectionManager;
 use r2d2::Pool;
 use chrono::{DateTime, Utc};
@@ -236,32 +235,6 @@ pub fn get_project_by_path(
     ).optional()
 }
 
-pub fn get_all_projects(conn: &Connection) -> Result<Vec<Project>, rusqlite::Error> {
-    let mut stmt = conn.prepare(
-        "SELECT id, path, name, description, is_git_repo, is_favorite, 
-                last_analyzed_at, file_count, total_size_bytes, created_at, updated_at
-         FROM projects 
-         ORDER BY is_favorite DESC, updated_at DESC",
-    )?;
-
-    let projects = stmt.query_map([], |row| {
-        Ok(Project {
-            id: row.get(0)?,
-            path: row.get(1)?,
-            name: row.get(2)?,
-            description: row.get(3)?,
-            is_git_repo: row.get(4)?,
-            is_favorite: row.get(5)?,
-            last_analyzed_at: row.get(6)?,
-            file_count: row.get(7)?,
-            total_size_bytes: row.get(8)?,
-            created_at: row.get(9)?,
-            updated_at: row.get(10)?,
-        })
-    })?.collect::<Result<Vec<_>, _>>()?;
-
-    Ok(projects)
-}
 
 pub fn update_project_file_count(
     conn: &Connection,
@@ -341,48 +314,6 @@ pub fn get_cached_analysis(
 }
 
 // File operations
-pub fn batch_upsert_files(
-    tx: &Transaction,
-    project_id: i64,
-    files: &[FileMetadata],
-) -> Result<(), rusqlite::Error> {
-    let mut stmt = tx.prepare(
-        "INSERT INTO files (project_id, path, relative_path, language, size_bytes, 
-                           lines, last_modified, content_hash, analyzed)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-         ON CONFLICT(project_id, path) DO UPDATE SET
-            size_bytes = excluded.size_bytes,
-            last_modified = excluded.last_modified,
-            content_hash = excluded.content_hash,
-            analyzed = excluded.analyzed"
-    )?;
-    
-    for file in files {
-        stmt.execute(params![
-            project_id,
-            file.path,
-            file.relative_path,
-            file.language,
-            file.size_bytes,
-            file.lines,
-            file.last_modified,
-            file.content_hash,
-            file.analyzed
-        ])?;
-    }
-    
-    // Update project statistics
-    tx.execute(
-        "UPDATE projects SET 
-            file_count = (SELECT COUNT(*) FROM files WHERE project_id = ?1),
-            total_size_bytes = (SELECT COALESCE(SUM(size_bytes), 0) FROM files WHERE project_id = ?1),
-            updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?1",
-        params![project_id],
-    )?;
-    
-    Ok(())
-}
 
 // Task operations
 pub fn save_task_list(
@@ -548,18 +479,3 @@ pub fn load_setting(
 }
 
 // Utility functions
-pub fn clear_expired_cache(conn: &Connection) -> Result<usize, rusqlite::Error> {
-    conn.execute("DELETE FROM analysis_cache WHERE expires_at < CURRENT_TIMESTAMP", [])
-}
-
-pub fn get_project_statistics(conn: &Connection) -> Result<(i64, i64, i64), rusqlite::Error> {
-    conn.query_row(
-        "SELECT 
-            COUNT(*) as project_count,
-            COALESCE(SUM(file_count), 0) as total_files,
-            COALESCE(SUM(total_size_bytes), 0) as total_size
-         FROM projects",
-        [],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-    )
-}
