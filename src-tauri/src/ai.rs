@@ -50,6 +50,92 @@ fn extract_thinking_and_response(content: &str) -> (Option<String>, String) {
     }
 }
 
+// Extract assistant text and optional reasoning/thinking from a choice that may use
+// various content shapes (string or array of content parts) used by "thinking" models.
+fn extract_choice_texts(choice: &serde_json::Value) -> (Option<String>, String) {
+    // Fast path: traditional schema with string content
+    if let Some(message) = choice["message"]["content"].as_str() {
+        return extract_thinking_and_response(message);
+    }
+
+    // Alternative schemas:
+    // - content: [ { type: "text"|"output_text", text: "..." }, { type: "reasoning"|"thinking", ... } ]
+    // - message.reasoning_content: "..."
+    let mut thinking: Option<String> = None;
+    let mut output_text_parts: Vec<String> = Vec::new();
+    let mut fallback_text_parts: Vec<String> = Vec::new();
+
+    // message.reasoning_content (some providers)
+    if let Some(reasoning_str) = choice["message"]["reasoning_content"].as_str() {
+        let trimmed = reasoning_str.trim();
+        if !trimmed.is_empty() {
+            thinking = Some(trimmed.to_string());
+        }
+    }
+
+    // message.content as array of parts
+    if let Some(parts) = choice["message"]["content"].as_array() {
+        for part in parts {
+            // Try common shapes
+            let part_type = part["type"].as_str().unwrap_or("");
+            // OpenAI/others may use { type: "text", text: "..." }
+            if let Some(text) = part["text"].as_str() {
+                let text = text.trim();
+                if text.is_empty() { continue; }
+                match part_type {
+                    // Explicit output text type should be preferred
+                    "output_text" => output_text_parts.push(text.to_string()),
+                    // Some providers label thinking/reasoning explicitly
+                    "reasoning" | "thinking" => {
+                        if thinking.is_none() && !text.is_empty() {
+                            thinking = Some(text.to_string());
+                        }
+                    }
+                    _ => {
+                        // Generic text segment; collect as fallback
+                        fallback_text_parts.push(text.to_string());
+                    }
+                }
+                continue;
+            }
+
+            // Some shapes might nest fields differently; try to be defensive
+            if let Some(thought) = part["reasoning"].as_str().or(part["thinking"].as_str()) {
+                let t = thought.trim();
+                if !t.is_empty() && thinking.is_none() { thinking = Some(t.to_string()); }
+            }
+            if let Some(txt) = part["content"].as_str() {
+                let t = txt.trim();
+                if !t.is_empty() { fallback_text_parts.push(t.to_string()); }
+            }
+        }
+    }
+
+    // Join output text, prefer explicit output_text parts if present; otherwise fallback
+    let mut combined = if !output_text_parts.is_empty() {
+        output_text_parts.join("")
+    } else {
+        fallback_text_parts.join("")
+    };
+
+    // Still nothing? Try to coerce message.content to string if possible
+    if combined.is_empty() {
+        if let Some(text) = choice["message"]["content"].as_str() {
+            combined = text.to_string();
+        }
+    }
+
+    // If combined text still contains <think>...</think>, extract and prefer explicit thinking
+    if !combined.is_empty() {
+        let (think_from_tags, response) = extract_thinking_and_response(&combined);
+        if thinking.is_none() { thinking = think_from_tags; }
+        return (thinking, response);
+    }
+
+    // Last resort: empty content
+    (thinking, String::new())
+}
+
 fn parse_structured_response(content: &str) -> Vec<String> {
     let lines: Vec<&str> = content.lines().collect();
     let mut ideas = Vec::with_capacity(10); // Pre-allocate for typical case
@@ -726,8 +812,8 @@ Start directly with '1.' and end after '10.'."#,
 
     if let Some(choices) = response_json["choices"].as_array() {
         if let Some(choice) = choices.first() {
-            if let Some(message) = choice["message"]["content"].as_str() {
-                let (_thinking, content) = extract_thinking_and_response(message);
+            let (_thinking, content) = extract_choice_texts(choice);
+            if !content.is_empty() {
                 let ideas = parse_structured_response(&content);
                 return Ok(ideas);
             }
@@ -819,8 +905,8 @@ Rules:
 
     if let Some(choices) = response_json["choices"].as_array() {
         if let Some(choice) = choices.first() {
-            if let Some(message) = choice["message"]["content"].as_str() {
-                let (_thinking, summary_text) = extract_thinking_and_response(message);
+            let (_thinking, summary_text) = extract_choice_texts(choice);
+            if !summary_text.is_empty() {
                 let key_features = extract_key_features(&summary_text);
                 let summary = ProjectSummary {
                     project_path: request.project_path,
