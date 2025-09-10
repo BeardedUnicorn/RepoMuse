@@ -1005,20 +1005,20 @@ mod tests {
 
     #[test]
     fn test_parse_structured_response_ignores_preamble_and_think() {
-        let input = "<think> CoT here </think>\nIntro line before ideas.\n1. First idea\n2. Second idea";
+        let input = "<think> CoT here </think>\nIntro line before ideas.\n1. First idea with enough detail to pass filter\n2. Second idea also sufficiently descriptive";
         let ideas = parse_structured_response(input);
         assert_eq!(ideas.len(), 2);
         assert!(!ideas[0].contains("<think>"));
-        assert_eq!(ideas[0], "First idea");
-        assert_eq!(ideas[1], "Second idea");
+        assert_eq!(ideas[0], "First idea with enough detail to pass filter");
+        assert_eq!(ideas[1], "Second idea also sufficiently descriptive");
     }
 
     #[test]
     fn test_parse_structured_response_handles_unclosed_think_by_skipping_preamble() {
-        let input = "<think> CoT without closing tag\nStill thinking...\n1. Start ideas here\n- continuation of first idea\n2. Another idea";
+        let input = "<think> CoT without closing tag\nStill thinking...\n1. Start ideas here with details beyond threshold\ncontinuation of first idea, elaboration continues\n2. Another idea with adequate length";
         let ideas = parse_structured_response(input);
         assert_eq!(ideas.len(), 2);
-        assert_eq!(ideas[0], "Start ideas here continuation of first idea");
-        assert_eq!(ideas[1], "Another idea");
+        assert_eq!(ideas[0], "Start ideas here with details beyond threshold continuation of first idea, elaboration continues");
+        assert_eq!(ideas[1], "Another idea with adequate length");
     }
 }
