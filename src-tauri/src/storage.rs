@@ -248,7 +248,7 @@ pub async fn load_settings(
     
     if let Some(json) = db::load_setting(&conn, "api_settings").map_err(|e| e.to_string())? {
         // Backward-compatible: provide defaults for any missing fields
-        let mut settings: Settings = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+        let settings: Settings = serde_json::from_str(&json).map_err(|e| e.to_string())?;
         // Fields with serde(default) are already filled; just return
         Ok(settings)
     } else {
