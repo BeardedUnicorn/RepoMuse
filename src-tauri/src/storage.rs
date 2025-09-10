@@ -8,7 +8,29 @@ pub struct Settings {
     pub api_url: String,
     pub model: String,
     pub api_key: String,
+    #[serde(default = "default_temperature_ideas")]
+    pub temperature_ideas: f32,
+    #[serde(default = "default_frequency_penalty_ideas")]
+    pub frequency_penalty_ideas: f32,
+    #[serde(default = "default_presence_penalty_ideas")]
+    pub presence_penalty_ideas: f32,
+    #[serde(default = "default_max_tokens_ideas")]
+    pub max_tokens_ideas: u32,
+    #[serde(default = "default_temperature_summary")]
+    pub temperature_summary: f32,
+    #[serde(default = "default_presence_penalty_summary")]
+    pub presence_penalty_summary: f32,
+    #[serde(default = "default_max_tokens_summary")]
+    pub max_tokens_summary: u32,
 }
+
+fn default_temperature_ideas() -> f32 { 0.6 }
+fn default_frequency_penalty_ideas() -> f32 { 0.3 }
+fn default_presence_penalty_ideas() -> f32 { 0.1 }
+fn default_max_tokens_ideas() -> u32 { 1500 }
+fn default_temperature_summary() -> f32 { 0.4 }
+fn default_presence_penalty_summary() -> f32 { 0.1 }
+fn default_max_tokens_summary() -> u32 { 1200 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ThemePreference {
@@ -222,12 +244,22 @@ pub async fn load_settings(
     let conn = db_pool.get().map_err(|e| e.to_string())?;
     
     if let Some(json) = db::load_setting(&conn, "api_settings").map_err(|e| e.to_string())? {
-        serde_json::from_str(&json).map_err(|e| e.to_string())
+        // Backward-compatible: provide defaults for any missing fields
+        let mut settings: Settings = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+        // Fields with serde(default) are already filled; just return
+        Ok(settings)
     } else {
         Ok(Settings {
             api_url: "http://localhost:11434/v1/chat/completions".to_string(),
             model: "llama2".to_string(),
             api_key: "".to_string(),
+            temperature_ideas: default_temperature_ideas(),
+            frequency_penalty_ideas: default_frequency_penalty_ideas(),
+            presence_penalty_ideas: default_presence_penalty_ideas(),
+            max_tokens_ideas: default_max_tokens_ideas(),
+            temperature_summary: default_temperature_summary(),
+            presence_penalty_summary: default_presence_penalty_summary(),
+            max_tokens_summary: default_max_tokens_summary(),
         })
     }
 }

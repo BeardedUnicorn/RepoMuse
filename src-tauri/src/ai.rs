@@ -700,10 +700,10 @@ Start directly with '1.' and end after '10.'.",
             },
             { "role": "user", "content": prompt }
         ],
-        "max_tokens": 1500,
-        "temperature": 0.6,
-        "frequency_penalty": 0.3,
-        "presence_penalty": 0.1,
+        "max_tokens": request.settings.max_tokens_ideas,
+        "temperature": request.settings.temperature_ideas,
+        "frequency_penalty": request.settings.frequency_penalty_ideas,
+        "presence_penalty": request.settings.presence_penalty_ideas,
         "stop": ["\n11."]
     });
 
@@ -795,9 +795,9 @@ Rules:
             { "role": "system", "content": "You are a technical documentation specialist. Create a concise, code‑grounded summary of the repository based on the provided context.\n\nOutput only these sections, in order, with brief content:\n- Overview (2–3 sentences)\n- Key Features (bulleted '- ' lines)\n- Architecture (1–3 sentences; patterns, layers, data flow)\n- Tech Stack (comma‑separated)\n- Notable Files (bulleted with key paths and roles)\n- Intended Users/Use Cases (1–2 sentences)\n- Limitations/Unknowns (bulleted; use 'Unknown' where evidence is absent)\n\nGround claims in the code and configs (reference file paths/symbols when helpful). Avoid speculation or marketing language. Keep the total length under ~300 words. No preamble, no closing, no code fences." },
             { "role": "user", "content": prompt }
         ],
-        "max_tokens": 1200,
-        "temperature": 0.4,
-        "presence_penalty": 0.1
+        "max_tokens": request.settings.max_tokens_summary,
+        "temperature": request.settings.temperature_summary,
+        "presence_penalty": request.settings.presence_penalty_summary
     });
 
     let response = client

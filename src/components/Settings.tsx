@@ -70,10 +70,26 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSettingsUpdated }) => {
     }
   };
 
+  const numberFields = new Set([
+    'temperature_ideas',
+    'frequency_penalty_ideas',
+    'presence_penalty_ideas',
+    'max_tokens_ideas',
+    'temperature_summary',
+    'presence_penalty_summary',
+    'max_tokens_summary',
+  ]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value, type } = e.target;
+    let newValue: any = value;
+    if (numberFields.has(name)) {
+      newValue = type === 'number' ? (name.includes('tokens') ? parseInt(value || '0', 10) : parseFloat(value || '0')) : value;
+      if (Number.isNaN(newValue)) newValue = 0;
+    }
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [name]: newValue,
     });
   };
 
@@ -235,6 +251,113 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSettingsUpdated }) => {
               <Button type="submit" variant="primary" loading={isSaving}>Save Settings</Button>
             </div>
           </form>
+        </Fieldset>
+
+        {/* Model Parameters */}
+        <Fieldset title="Model Parameters" description="Tune generation behavior for ideas and summaries.">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <h3 className="text-md font-semibold text-foreground">Idea Generation</h3>
+              <FormRow>
+                <TextField
+                  label="Temperature"
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  max={2}
+                  id="temperature_ideas"
+                  name="temperature_ideas"
+                  value={formData.temperature_ideas}
+                  onChange={handleChange}
+                  placeholder="0.6"
+                />
+                <TextField
+                  label="Frequency Penalty"
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  max={2}
+                  id="frequency_penalty_ideas"
+                  name="frequency_penalty_ideas"
+                  value={formData.frequency_penalty_ideas}
+                  onChange={handleChange}
+                  placeholder="0.3"
+                />
+              </FormRow>
+              <FormRow>
+                <TextField
+                  label="Presence Penalty"
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  max={2}
+                  id="presence_penalty_ideas"
+                  name="presence_penalty_ideas"
+                  value={formData.presence_penalty_ideas}
+                  onChange={handleChange}
+                  placeholder="0.1"
+                />
+                <TextField
+                  label="Max Tokens"
+                  type="number"
+                  step="1"
+                  min={256}
+                  max={32768}
+                  id="max_tokens_ideas"
+                  name="max_tokens_ideas"
+                  value={formData.max_tokens_ideas}
+                  onChange={handleChange}
+                  placeholder="1500"
+                />
+              </FormRow>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-md font-semibold text-foreground">Project Summary</h3>
+              <FormRow>
+                <TextField
+                  label="Temperature"
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  max={2}
+                  id="temperature_summary"
+                  name="temperature_summary"
+                  value={formData.temperature_summary}
+                  onChange={handleChange}
+                  placeholder="0.4"
+                />
+                <TextField
+                  label="Presence Penalty"
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  max={2}
+                  id="presence_penalty_summary"
+                  name="presence_penalty_summary"
+                  value={formData.presence_penalty_summary}
+                  onChange={handleChange}
+                  placeholder="0.1"
+                />
+              </FormRow>
+              <FormRow>
+                <TextField
+                  label="Max Tokens"
+                  type="number"
+                  step="1"
+                  min={256}
+                  max={32768}
+                  id="max_tokens_summary"
+                  name="max_tokens_summary"
+                  value={formData.max_tokens_summary}
+                  onChange={handleChange}
+                  placeholder="1200"
+                />
+              </FormRow>
+            </div>
+          </div>
+
+          
         </Fieldset>
       </div>
 

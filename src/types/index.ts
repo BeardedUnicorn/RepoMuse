@@ -2,6 +2,15 @@ export interface Settings {
   api_url: string;
   model: string;
   api_key: string;
+  // Idea generation parameters
+  temperature_ideas: number;
+  frequency_penalty_ideas: number;
+  presence_penalty_ideas: number;
+  max_tokens_ideas: number;
+  // Summary generation parameters
+  temperature_summary: number;
+  presence_penalty_summary: number;
+  max_tokens_summary: number;
 }
 
 export interface ModelInfo {
