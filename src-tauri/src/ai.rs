@@ -648,7 +648,7 @@ pub async fn generate_ideas(request: IdeaRequest) -> Result<Vec<String>, String>
     };
     
     let prompt = format!(
-        "REPOSITORY CONTEXT:\n{}\n\n{}
+        r#"REPOSITORY CONTEXT:\n{}\n\n{}
 
 TASK: Generate exactly 10 development ideas for this repository.
 
@@ -681,7 +681,7 @@ RESPONSE FORMAT (STRICT):
 - Prepend tags: [Category: ...] [Affected: `path1`, `path2`].
 - Append triage: [Impact: H/M/L] [Effort: S/M/L] [Confidence: %].
 
-Start directly with '1.' and end after '10.'.",
+Start directly with '1.' and end after '10.'."#,
         comprehensive_context, focus_instructions
     );
 
