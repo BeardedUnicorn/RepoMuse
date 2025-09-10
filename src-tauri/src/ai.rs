@@ -7,8 +7,8 @@ use once_cell::sync::Lazy;
 use std::fmt::Write;
 
 // Cached regex patterns
-static THINKING_REGEX: Lazy<Regex> = 
-    Lazy::new(|| Regex::new(r"(?s)<think>(.*?)</think>(.*)").unwrap());
+static THINKING_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?is)<think>(.*?)</think>(.*)").unwrap());
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ModelInfo {
@@ -140,6 +140,7 @@ fn parse_structured_response(content: &str) -> Vec<String> {
     let lines: Vec<&str> = content.lines().collect();
     let mut ideas = Vec::with_capacity(10); // Pre-allocate for typical case
     let mut current_idea = String::with_capacity(500); // Pre-allocate
+    let mut started_capture = false; // don't capture until first bullet/numbered item
     
     for line in lines {
         let line = line.trim();
@@ -152,12 +153,13 @@ fn parse_structured_response(content: &str) -> Vec<String> {
             || line.starts_with("- ")
             || line.starts_with("* ");
         
-        if is_new_idea && !current_idea.trim().is_empty() {
-            ideas.push(current_idea.trim().to_string());
-            current_idea.clear();
-        }
-        
         if is_new_idea {
+            // First time we see an idea marker, begin capturing and flush previous idea if any
+            if started_capture && !current_idea.trim().is_empty() {
+                ideas.push(current_idea.trim().to_string());
+                current_idea.clear();
+            }
+            started_capture = true;
             let cleaned = line
                 .trim_start_matches(char::is_numeric)
                 .trim_start_matches('.')
@@ -167,11 +169,14 @@ fn parse_structured_response(content: &str) -> Vec<String> {
                 .trim_start_matches("* ")
                 .trim();
             current_idea.push_str(cleaned);
-        } else if !current_idea.is_empty() {
-            current_idea.push(' ');
+        } else if started_capture {
+            if !current_idea.is_empty() {
+                current_idea.push(' ');
+            }
             current_idea.push_str(line);
         } else {
-            current_idea.push_str(line);
+            // Ignore any preamble (including <think> blocks or headings) until ideas start
+            continue;
         }
     }
     
@@ -996,5 +1001,24 @@ mod tests {
         let (thinking, response) = extract_choice_texts(&choice);
         assert_eq!(thinking.unwrap(), "inner reasoning");
         assert_eq!(response, "final text");
+    }
+
+    #[test]
+    fn test_parse_structured_response_ignores_preamble_and_think() {
+        let input = "<think> CoT here </think>\nIntro line before ideas.\n1. First idea\n2. Second idea";
+        let ideas = parse_structured_response(input);
+        assert_eq!(ideas.len(), 2);
+        assert!(!ideas[0].contains("<think>"));
+        assert_eq!(ideas[0], "First idea");
+        assert_eq!(ideas[1], "Second idea");
+    }
+
+    #[test]
+    fn test_parse_structured_response_handles_unclosed_think_by_skipping_preamble() {
+        let input = "<think> CoT without closing tag\nStill thinking...\n1. Start ideas here\n- continuation of first idea\n2. Another idea";
+        let ideas = parse_structured_response(input);
+        assert_eq!(ideas.len(), 2);
+        assert_eq!(ideas[0], "Start ideas here continuation of first idea");
+        assert_eq!(ideas[1], "Another idea");
     }
 }
