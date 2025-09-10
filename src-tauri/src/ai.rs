@@ -425,7 +425,6 @@ fn build_comprehensive_context(analysis: &RepoAnalysis) -> String {
     // Extract keywords and analyze technology profile
     let keywords = extract_project_keywords(analysis);
     let profile = analyze_technology_profile(analysis, &keywords);
-    let smart_suggestions = generate_smart_suggestions(&profile, &keywords);
     
     // Use write! macro instead of push_str with format!
     let _ = write!(&mut context, 
@@ -463,14 +462,60 @@ fn build_comprehensive_context(analysis: &RepoAnalysis) -> String {
     }
     let _ = write!(&mut context, "\n");
     
-    // Add smart suggestions
-    if !smart_suggestions.is_empty() {
-        let _ = write!(&mut context, "Smart Suggestions Based on Project Analysis:\n");
-        for suggestion in &smart_suggestions {
-            let _ = write!(&mut context, "- {}\n", suggestion);
-        }
-        let _ = write!(&mut context, "\n");
+    // High-level observations (neutral, non-prescriptive)
+    let _ = write!(&mut context, "Observations:\n");
+    // Common files presence
+    let has_readme = analysis.files.iter().any(|f| f.path.to_lowercase().contains("readme"));
+    let has_license = analysis.files.iter().any(|f| f.path.to_lowercase().ends_with("license") || f.path.to_lowercase().contains("license."));
+    let has_gitignore = analysis.files.iter().any(|f| f.path.ends_with(".gitignore"));
+    let _ = write!(
+        &mut context,
+        "- Common files: README={} LICENSE={} .gitignore={}\n",
+        if has_readme { "yes" } else { "no" },
+        if has_license { "yes" } else { "no" },
+        if has_gitignore { "yes" } else { "no" }
+    );
+    // Testing snapshot
+    let mut test_file_count = 0usize;
+    let mut testing_frameworks: Vec<&'static str> = Vec::new();
+    for file in &analysis.files {
+        let name = file.path.to_lowercase();
+        let is_test_name = name.ends_with(".test.js") || name.ends_with(".test.ts") || name.ends_with(".test.jsx") || name.ends_with(".test.tsx")
+            || name.ends_with(".spec.js") || name.ends_with(".spec.ts") || name.ends_with(".spec.jsx") || name.ends_with(".spec.tsx")
+            || name.ends_with("_test.py") || name.contains("/test/") || name.contains("/tests/") || name.contains("/__tests__/") || name.contains("/spec/");
+        if is_test_name { test_file_count += 1; }
+        let lower = file.content.to_lowercase();
+        if lower.contains("jest") && !testing_frameworks.contains(&"Jest") { testing_frameworks.push("Jest"); }
+        if lower.contains("vitest") && !testing_frameworks.contains(&"Vitest") { testing_frameworks.push("Vitest"); }
+        if lower.contains("mocha") && !testing_frameworks.contains(&"Mocha") { testing_frameworks.push("Mocha"); }
+        if lower.contains("jasmine") && !testing_frameworks.contains(&"Jasmine") { testing_frameworks.push("Jasmine"); }
+        if lower.contains("cypress") && !testing_frameworks.contains(&"Cypress") { testing_frameworks.push("Cypress"); }
+        if lower.contains("playwright") && !testing_frameworks.contains(&"Playwright") { testing_frameworks.push("Playwright"); }
     }
+    testing_frameworks.sort();
+    let _ = write!(
+        &mut context,
+        "- Testing: frameworks=[{}] test_files={}\n",
+        testing_frameworks.join(", "),
+        test_file_count
+    );
+    // CI snapshot
+    let _ = write!(
+        &mut context,
+        "- CI/CD: {} ({} files)\n",
+        if profile.has_cicd { "detected" } else { "not_detected" },
+        keywords.cicd_related.len()
+    );
+    // Known gaps
+    let mut gaps: Vec<&str> = Vec::new();
+    if !profile.has_testing || test_file_count == 0 { gaps.push("No tests detected"); }
+    if !profile.has_cicd { gaps.push("No CI configuration detected"); }
+    if !has_readme { gaps.push("README missing"); }
+    if !has_license { gaps.push("LICENSE missing"); }
+    if !gaps.is_empty() {
+        let _ = write!(&mut context, "- Known gaps: {}\n", gaps.join(", "));
+    }
+    let _ = write!(&mut context, "\n");
     
     // Detailed file analysis
     let _ = write!(&mut context, "File Analysis:\n");
@@ -494,16 +539,23 @@ fn build_comprehensive_context(analysis: &RepoAnalysis) -> String {
         }
     }
     
-    // Provide context about key files
+    // Provide context about notable files (prefer roles over long previews)
     if !source_files.is_empty() {
-        let _ = write!(&mut context, "\nKey Source Files:\n");
-        for file in source_files.iter().take(10) {
-            let preview = if file.content.len() > 500 {
-                format!("{}...", &file.content[..500])
+        // Select top by size as a simple proxy for centrality
+        let mut sorted_sources = source_files.clone();
+        sorted_sources.sort_by_key(|f| std::cmp::Reverse(f.size));
+        let _ = write!(&mut context, "\nNotable Files (by size):\n");
+        for file in sorted_sources.iter().take(5) {
+            let _ = write!(&mut context, "- {} ({}, {} bytes)\n", file.path, file.language, file.size);
+        }
+        // Include short previews for the top 2 only
+        let _ = write!(&mut context, "\nContent Previews (top 2):\n");
+        for file in sorted_sources.iter().take(2) {
+            let preview = if file.content.len() > 300 {
+                format!("{}...", &file.content[..300])
             } else {
                 file.content.clone()
             };
-            
             let _ = write!(&mut context, "\n{} ({}):\n{}\n", file.path, file.language, preview);
         }
     }
@@ -614,32 +666,22 @@ REQUIREMENTS:
    - ✗ If responsive design exists, don't suggest making it responsive
 
 3. Each idea MUST be:
-   - SPECIFIC: Include exact file names, component names, or code locations
-   - ACTIONABLE: Clear implementation steps, not vague suggestions
-   - VALUABLE: Solve real problems or add meaningful capabilities
-   - UNIQUE: Not duplicate existing functionality
+   - SPECIFIC: Include at least one exact file path or symbol using backticks (e.g., `src/components/Foo.tsx`, function `bar()`).
+   - ACTIONABLE: State the key implementation step(s) inline; if adding a dependency, name it and where to add it (e.g., `package.json` devDependencies).
+   - VALUABLE: Solve real problems or add meaningful capabilities.
+   - UNIQUE: Do not duplicate other items.
+   - VERIFIED: If confidence < 60% or evidence is weak, prefix with "Verify:" and state the assumption.
 
-4. Focus categories:
-   - Missing Features: New functionality that adds value
-   - Performance: Specific optimizations with measurable impact
-   - Testing Gaps: Untested critical paths or edge cases
-   - Security: Concrete vulnerabilities to address
-   - Developer Experience: Tooling, debugging, or workflow improvements
-   - User Experience: Specific UI/UX enhancements
-   - Technical Debt: Refactoring opportunities with clear benefits
-   - Documentation: Critical undocumented areas
-   - Integration: External services or tools to integrate
-   - Monitoring: Observability and error tracking
+4. Focus categories (cover distinct areas):
+   - Missing Features, Performance, Testing Gaps, Security, Developer Experience, User Experience, Technical Debt, Documentation, Integration, Monitoring
 
-RESPONSE FORMAT:
-Return EXACTLY 10 ideas as a numbered list (1-10).
-Each idea should be 2-3 sentences:
-- First sentence: WHAT to implement
-- Second sentence: WHY it's valuable and expected impact
-- Optional third sentence: HOW to implement (key approach)
+RESPONSE FORMAT (STRICT):
+- Output ONLY a numbered list 1-10 (no sub-bullets, no nested numbering, no code fences).
+- Each item is 2-3 sentences: WHAT, WHY (impact), optional HOW.
+- Prepend tags: [Category: ...] [Affected: `path1`, `path2`].
+- Append triage: [Impact: H/M/L] [Effort: S/M/L] [Confidence: %].
 
-Start directly with '1.' - no introduction.
-End after '10.' - no conclusion.",
+Start directly with '1.' and end after '10.'.",
         comprehensive_context, focus_instructions
     );
 
@@ -661,6 +703,7 @@ End after '10.' - no conclusion.",
         "max_tokens": 1500,
         "temperature": 0.6,
         "frequency_penalty": 0.3,
+        "presence_penalty": 0.1,
         "stop": ["\n11."]
     });
 
@@ -708,7 +751,7 @@ pub async fn generate_project_summary(request: SummaryRequest) -> Result<Project
         .collect();
 
     let prompt = format!(
-        "Analyze this code repository and create a clear, focused summary that explains what this application/project does.
+        "Analyze this code repository and create a concise, code-grounded summary.
 
 Repository Analysis:
 - Technologies: {}
@@ -719,15 +762,20 @@ Repository Analysis:
 File Previews:
 {}
 
-Please provide a summary that focuses on:
-1. What this application/project does (main purpose and functionality)
-2. Core features and capabilities
-3. Technical architecture and implementation approach
-4. Target users or use cases
-5. Notable design patterns or architectural decisions
+Your summary MUST include sections in this exact order and be extractor-friendly:
+- Overview (2–3 sentences)
+- Key Features (max 5 bullets, each starting with '- ')
+- Architecture (1–3 sentences; patterns, layers, data flow)
+- Tech Stack (single line, comma-separated)
+- Notable Files (max 5 bullets with key paths and roles)
+- Intended Users/Use Cases (1–2 sentences)
+- Limitations/Unknowns (bulleted; use 'Unknown' where evidence is absent)
 
-Write the summary in clear, accessible language that both technical and non-technical readers can understand.
-Focus on what the project ACTUALLY does based on the code, not what it could do.",
+Rules:
+- Ground claims in code/configs; reference file paths/symbols with backticks when helpful.
+- Avoid speculation or marketing language.
+- Total length under ~300 words.
+- No preamble, no conclusion, no code fences.",
         request.analysis.technologies.join(", "),
         request.analysis.metrics.get("total_files").unwrap_or(&0),
         request.analysis.metrics.get("total_lines").unwrap_or(&0),
@@ -748,7 +796,8 @@ Focus on what the project ACTUALLY does based on the code, not what it could do.
             { "role": "user", "content": prompt }
         ],
         "max_tokens": 1200,
-        "temperature": 0.4
+        "temperature": 0.4,
+        "presence_penalty": 0.1
     });
 
     let response = client
