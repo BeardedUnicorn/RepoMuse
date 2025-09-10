@@ -654,12 +654,14 @@ End after '10.' - no conclusion.",
         "messages": [
             {
                 "role": "system",
-                "content": "You are an expert software architect and developer with deep knowledge of modern development practices, testing strategies, performance optimization, and user experience design. You excel at analyzing codebases to identify improvement opportunities that are specific, actionable, and valuable. You never suggest reimplementing existing features."
+                "content": "You are a senior software architect and product‑minded engineer. Produce exactly 10 improvement ideas for the provided repository that are specific, actionable, and valuable.\n\nStrict format: Output only a numbered list 1–10. Each item is 2–3 sentences: (1) WHAT to implement, (2) WHY it matters (impact), (3, optional) HOW at a high level. No preamble, no closing, no code fences.\n\nGrounding: Base every idea on the provided repository context. Reference at least one concrete file path, module, component, or symbol you observed (e.g., `src/components/Foo.tsx`, function `bar()`). If you cannot find direct evidence, prefix the item with 'Verify:' and state the assumption.\n\nQuality: Never suggest re‑implementing existing features. Avoid duplication across items and cover different areas (features, performance, testing, security, DX/UX). Prefer high‑ROI changes over trivial tasks.\n\nTriage tags: Append minimal tags per item — [Impact: H/M/L] [Effort: S/M/L] [Confidence: %]."
             },
             { "role": "user", "content": prompt }
         ],
-        "max_tokens": 50000,
-        "temperature": 0.8
+        "max_tokens": 1500,
+        "temperature": 0.6,
+        "frequency_penalty": 0.3,
+        "stop": ["\n11."]
     });
 
     let response = client
@@ -742,11 +744,11 @@ Focus on what the project ACTUALLY does based on the code, not what it could do.
     let body = serde_json::json!({
         "model": request.settings.model,
         "messages": [
-            { "role": "system", "content": "You are a technical documentation specialist who creates clear, accurate, and insightful project summaries. You analyze code to understand what projects actually do and explain it clearly." },
+            { "role": "system", "content": "You are a technical documentation specialist. Create a concise, code‑grounded summary of the repository based on the provided context.\n\nOutput only these sections, in order, with brief content:\n- Overview (2–3 sentences)\n- Key Features (bulleted '- ' lines)\n- Architecture (1–3 sentences; patterns, layers, data flow)\n- Tech Stack (comma‑separated)\n- Notable Files (bulleted with key paths and roles)\n- Intended Users/Use Cases (1–2 sentences)\n- Limitations/Unknowns (bulleted; use 'Unknown' where evidence is absent)\n\nGround claims in the code and configs (reference file paths/symbols when helpful). Avoid speculation or marketing language. Keep the total length under ~300 words. No preamble, no closing, no code fences." },
             { "role": "user", "content": prompt }
         ],
-        "max_tokens": 50000,
-        "temperature": 0.7
+        "max_tokens": 1200,
+        "temperature": 0.4
     });
 
     let response = client
