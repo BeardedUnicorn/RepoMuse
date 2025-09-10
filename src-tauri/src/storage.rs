@@ -22,6 +22,8 @@ pub struct Settings {
     pub presence_penalty_summary: f32,
     #[serde(default = "default_max_tokens_summary")]
     pub max_tokens_summary: u32,
+    #[serde(default = "default_use_stop_ideas")]
+    pub use_stop_ideas: bool,
 }
 
 fn default_temperature_ideas() -> f32 { 0.6 }
@@ -31,6 +33,7 @@ fn default_max_tokens_ideas() -> u32 { 1500 }
 fn default_temperature_summary() -> f32 { 0.4 }
 fn default_presence_penalty_summary() -> f32 { 0.1 }
 fn default_max_tokens_summary() -> u32 { 1200 }
+fn default_use_stop_ideas() -> bool { true }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ThemePreference {
@@ -260,6 +263,7 @@ pub async fn load_settings(
             temperature_summary: default_temperature_summary(),
             presence_penalty_summary: default_presence_penalty_summary(),
             max_tokens_summary: default_max_tokens_summary(),
+            use_stop_ideas: default_use_stop_ideas(),
         })
     }
 }

@@ -213,6 +213,51 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
   const [showSizeDetails, setShowSizeDetails] = useState(false);
   const { toast } = useToast();
 
+  // Parse idea metadata from bracketed tags
+  type IdeaMeta = {
+    coreText: string;
+    category?: string;
+    affected?: string[];
+    impact?: 'H' | 'M' | 'L';
+    effort?: 'S' | 'M' | 'L';
+    confidence?: number;
+  };
+
+  const parseIdeaMeta = (raw: string): IdeaMeta => {
+    let coreText = raw;
+    const meta: IdeaMeta = { coreText: raw };
+
+    const matchAndStrip = (pattern: RegExp, onMatch: (m: RegExpMatchArray) => void) => {
+      const m = coreText.match(pattern);
+      if (m) {
+        onMatch(m);
+        coreText = coreText.replace(m[0], '').trim();
+      }
+    };
+
+    matchAndStrip(/\[Category:\s*([^\]]+)\]/i, (m) => {
+      meta.category = m[1].trim();
+    });
+    matchAndStrip(/\[Affected:\s*([^\]]+)\]/i, (m) => {
+      const inside = m[1];
+      const paths = inside.match(/`([^`]+)`/g) || [];
+      meta.affected = paths.map((p) => p.replace(/`/g, ''));
+    });
+    matchAndStrip(/\[Impact:\s*([HML])\]/i, (m) => {
+      meta.impact = m[1].toUpperCase() as any;
+    });
+    matchAndStrip(/\[Effort:\s*([SML])\]/i, (m) => {
+      meta.effort = m[1].toUpperCase() as any;
+    });
+    matchAndStrip(/\[Confidence:\s*(\d{1,3})%\]/i, (m) => {
+      meta.confidence = Math.min(100, parseInt(m[1], 10));
+    });
+
+    // Clean up repeated spaces
+    meta.coreText = coreText.replace(/\s{2,}/g, ' ').trim();
+    return meta;
+  };
+
   // Optimized: Batch progress updates
   const pendingProgressUpdates = useRef<ProgressUpdate[]>([]);
   const progressFlushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -665,7 +710,9 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
                   </p>
                 </div>
               )}
-              {ideas.map((idea, index) => (
+              {ideas.map((idea, index) => {
+                const meta = parseIdeaMeta(idea);
+                return (
                 <div
                   key={index}
                   className="border-l-4 border-success bg-success/10 dark:bg-success/20 p-4 rounded-r-md group"
@@ -677,7 +724,33 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
                       </span>
                     </div>
                     <div className="ml-3 flex-1">
-                      <p className="text-foreground whitespace-pre-line">{idea}</p>
+                      <p className="text-foreground whitespace-pre-line">{meta.coreText}</p>
+                      {(meta.category || (meta.affected && meta.affected.length) || meta.impact || meta.effort || typeof meta.confidence === 'number') && (
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                          {meta.category && <Badge variant="purple">{meta.category}</Badge>}
+                          {meta.impact && (
+                            <Badge variant={meta.impact === 'H' ? 'red' : meta.impact === 'M' ? 'blue' : 'gray'}>
+                              Impact: {meta.impact}
+                            </Badge>
+                          )}
+                          {meta.effort && (
+                            <Badge variant={meta.effort === 'S' ? 'green' : meta.effort === 'M' ? 'blue' : 'red'}>
+                              Effort: {meta.effort}
+                            </Badge>
+                          )}
+                          {typeof meta.confidence === 'number' && (
+                            <Badge variant="gray">Confidence: {meta.confidence}%</Badge>
+                          )}
+                          {meta.affected && meta.affected.length > 0 && (
+                            <span className="text-foreground-tertiary">Affected:</span>
+                          )}
+                          {meta.affected && meta.affected.map((p, i) => (
+                            <span key={i} className="px-1.5 py-0.5 rounded bg-background-tertiary text-foreground-secondary font-mono">
+                              {p}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <button
                       onClick={() => addIdeaToTasks(idea)}
@@ -688,7 +761,7 @@ const ProjectAnalyzer: React.FC<ProjectAnalyzerProps> = ({ selectedProject, sett
                     </button>
                   </div>
                 </div>
-              ))}
+              );})}
             </div>
           )}
         </div>

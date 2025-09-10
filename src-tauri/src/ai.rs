@@ -691,7 +691,7 @@ Start directly with '1.' and end after '10.'.",
     }
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
 
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "model": request.settings.model,
         "messages": [
             {
@@ -703,9 +703,13 @@ Start directly with '1.' and end after '10.'.",
         "max_tokens": request.settings.max_tokens_ideas,
         "temperature": request.settings.temperature_ideas,
         "frequency_penalty": request.settings.frequency_penalty_ideas,
-        "presence_penalty": request.settings.presence_penalty_ideas,
-        "stop": ["\n11."]
+        "presence_penalty": request.settings.presence_penalty_ideas
     });
+    if request.settings.use_stop_ideas {
+        if let Some(obj) = body.as_object_mut() {
+            obj.insert("stop".to_string(), serde_json::json!(["\n11."]));
+        }
+    }
 
     let response = client
         .post(&request.settings.api_url)

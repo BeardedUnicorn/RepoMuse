@@ -11,6 +11,7 @@ export interface Settings {
   temperature_summary: number;
   presence_penalty_summary: number;
   max_tokens_summary: number;
+  use_stop_ideas: boolean;
 }
 
 export interface ModelInfo {

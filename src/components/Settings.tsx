@@ -310,6 +310,19 @@ const Settings: React.FC<SettingsProps> = ({ settings, onSettingsUpdated }) => {
                   placeholder="1500"
                 />
               </FormRow>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="use_stop_ideas"
+                  name="use_stop_ideas"
+                  checked={Boolean(formData.use_stop_ideas)}
+                  onChange={(e) => setFormData({ ...formData, use_stop_ideas: e.target.checked })}
+                  className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                />
+                <label htmlFor="use_stop_ideas" className="text-sm text-foreground">
+                  Stop after 10 items (send stop sequence)
+                </label>
+              </div>
             </div>
 
             <div className="space-y-4">
