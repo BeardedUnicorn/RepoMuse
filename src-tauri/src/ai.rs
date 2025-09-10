@@ -921,3 +921,80 @@ Rules:
     }
     Err("Failed to generate summary".to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_extract_thinking_and_response_simple() {
+        let input = "Final answer only.";
+        let (thinking, response) = extract_thinking_and_response(input);
+        assert!(thinking.is_none());
+        assert_eq!(response, "Final answer only.");
+    }
+
+    #[test]
+    fn test_extract_thinking_and_response_with_tags() {
+        let input = "<think>Chain of thought here.</think> Final output.";
+        let (thinking, response) = extract_thinking_and_response(input);
+        assert_eq!(thinking.unwrap(), "Chain of thought here.");
+        assert_eq!(response, "Final output.");
+    }
+
+    #[test]
+    fn test_extract_choice_texts_array_with_reasoning_and_output_text() {
+        let choice = json!({
+            "message": {
+                "content": [
+                    { "type": "reasoning", "text": "Chain of thought." },
+                    { "type": "output_text", "text": "The final answer." }
+                ]
+            }
+        });
+        let (thinking, response) = extract_choice_texts(&choice);
+        assert_eq!(thinking.unwrap(), "Chain of thought.");
+        assert_eq!(response, "The final answer.");
+    }
+
+    #[test]
+    fn test_extract_choice_texts_array_generic_text_and_reasoning() {
+        let choice = json!({
+            "message": {
+                "content": [
+                    { "type": "text", "text": "Answer A." },
+                    { "type": "reasoning", "text": "Why A is correct." }
+                ]
+            }
+        });
+        let (thinking, response) = extract_choice_texts(&choice);
+        assert_eq!(thinking.unwrap(), "Why A is correct.");
+        assert_eq!(response, "Answer A.");
+    }
+
+    #[test]
+    fn test_extract_choice_texts_with_reasoning_content_field() {
+        let choice = json!({
+            "message": {
+                "reasoning_content": "CoT in separate field.",
+                "content": [ { "type": "text", "text": "Concise result." } ]
+            }
+        });
+        let (thinking, response) = extract_choice_texts(&choice);
+        assert_eq!(thinking.unwrap(), "CoT in separate field.");
+        assert_eq!(response, "Concise result.");
+    }
+
+    #[test]
+    fn test_extract_choice_texts_string_with_think_tags() {
+        let choice = json!({
+            "message": {
+                "content": "<think>inner reasoning</think> final text"
+            }
+        });
+        let (thinking, response) = extract_choice_texts(&choice);
+        assert_eq!(thinking.unwrap(), "inner reasoning");
+        assert_eq!(response, "final text");
+    }
+}
